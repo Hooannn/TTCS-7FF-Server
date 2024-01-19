@@ -93,6 +93,7 @@ class AuthService {
     if (storedToken !== token) throw new HttpException(400, errorStatus.INVALID_RESET_PASSWORD_TOKEN);
     const newHashedPassword = hashSync(newPassword, parseInt(SALTED_PASSWORD));
     await this.userRepository.update({ email }, { password: newHashedPassword });
+    await this.redisClient.del(`reset_password_token:${email}`);
     return { email: decodedToken.email, password: newPassword };
   }
 
