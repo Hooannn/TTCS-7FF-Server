@@ -13,8 +13,18 @@ class AuthController {
         return res.status(400).json({ errors: errors.array() });
       }
       const { firstName, lastName, email, password } = req.body;
-      const data = await this.authService.signUpByEmail({ email, password, firstName, lastName });
-      res.status(201).json({ code: 201, success: true, data, message: successStatus.SIGN_UP_SUCCESSFULLY });
+      const data = await this.authService.signUpByEmail({
+        email,
+        password,
+        firstName,
+        lastName,
+      });
+      res.status(201).json({
+        code: 201,
+        success: true,
+        data,
+        message: successStatus.SIGN_UP_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
@@ -28,7 +38,12 @@ class AuthController {
       }
       const { email, password } = req.body;
       const data = await this.authService.signInByEmail({ email, password });
-      res.status(200).json({ code: 200, success: true, data, message: successStatus.SIGN_IN_SUCCESSFULLY });
+      res.status(200).json({
+        code: 200,
+        success: true,
+        data,
+        message: successStatus.SIGN_IN_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
@@ -38,7 +53,12 @@ class AuthController {
     try {
       const { refreshToken } = req.body;
       const data = await this.authService.getAccessToken(refreshToken);
-      res.status(200).json({ code: 200, success: true, data, message: successStatus.REFRESH_SUCCESSFULLY });
+      res.status(200).json({
+        code: 200,
+        success: true,
+        data,
+        message: successStatus.REFRESH_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
@@ -53,7 +73,12 @@ class AuthController {
       const { email } = req.body;
       const { locale } = req.query;
       const data = await this.authService.forgotPassword(email, locale?.toString());
-      res.status(200).json({ code: 200, success: true, data, message: successStatus.FORGOT_PASSWORD_SUCCESSFULLY });
+      res.status(200).json({
+        code: 200,
+        success: true,
+        data,
+        message: successStatus.FORGOT_PASSWORD_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
@@ -67,7 +92,12 @@ class AuthController {
       }
       const { password, token } = req.body;
       const data = await this.authService.resetPassword(password, token);
-      res.status(200).json({ code: 200, success: true, data, message: successStatus.RESET_PASSWORD_SUCCESSFULLY });
+      res.status(200).json({
+        code: 200,
+        success: true,
+        data,
+        message: successStatus.RESET_PASSWORD_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
@@ -87,7 +117,10 @@ class AuthController {
     try {
       const { userId } = req.auth;
       const { password } = req.body;
-      const data = await this.authService.deactivateAccount({ userId, password });
+      const data = await this.authService.deactivateAccount({
+        userId,
+        password,
+      });
       res
         .clearCookie('refresh_token', { path: '/' })
         .clearCookie('access_token', { path: '/' })
@@ -105,7 +138,12 @@ class AuthController {
         throw new HttpException(400, errorStatus.GOOGLE_AUTHENTICATION_FAILED);
       }
       const data = await this.authService.googleAuthentication(googleAccessToken.toString());
-      res.status(200).json({ code: 200, success: true, data, message: data.message || successStatus.GOOGLE_AUTHENTICATION_SUCCESSFULLY });
+      res.status(200).json({
+        code: 200,
+        success: true,
+        data,
+        message: data.message || successStatus.GOOGLE_AUTHENTICATION_SUCCESSFULLY,
+      });
     } catch (error) {
       next(error);
     }
