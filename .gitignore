@@ -134,3 +134,5 @@ dist
 package-lock.json
 #secret file
 accountService.json
+.env.development.local
+.env.production.local
