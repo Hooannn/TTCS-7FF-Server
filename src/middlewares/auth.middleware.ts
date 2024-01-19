@@ -8,7 +8,7 @@ const authMiddleware = async (req: RequestWithUser, res: Response, next: NextFun
     const authService = new AuthService();
     const Authorization = req.cookies['Authorization'] || (req.header('Authorization') ? req.header('Authorization').split('Bearer ')[1] : null);
     if (Authorization) {
-      const decodedToken = authService.verifyAccessToken(Authorization); // Verify token logic here
+      const decodedToken = authService.verifyAccessToken(Authorization);
       req.auth = decodedToken as AuthJwtPayload;
       next();
     } else {

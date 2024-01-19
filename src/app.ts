@@ -12,6 +12,7 @@ import errorMiddleware from '@middlewares/error.middleware';
 import { logger, stream } from '@utils/logger';
 import 'reflect-metadata';
 import { AppDataSource } from './data-source';
+import RedisService from './services/redis.service';
 class App {
   public app: express.Application;
   public env: string;
@@ -27,23 +28,36 @@ class App {
     this.initializeErrorHandling();
   }
 
-  public listen() {
-    AppDataSource.initialize()
-      .then(() => {
-        this.app.listen(this.port, () => {
-          logger.info(`=================================`);
-          logger.info(`======= ENV: ${this.env} =======`);
-          logger.info(`🚀 App listening on the port ${this.port}`);
-          logger.info(`=================================`);
-        });
-      })
-      .catch(error => {
-        logger.error(`X Error while initialize typeorm connection ${JSON.stringify(error)}`);
-      });
+  public async start() {
+    try {
+      await this.connectToDatabase();
+      await this.connectToRedis();
+      this.listen();
+    } catch (error) {
+      logger.error(`X Error while start app ${JSON.stringify(error)}`);
+    }
   }
 
   public getServer() {
     return this.app;
+  }
+
+  private listen() {
+    this.app.listen(this.port, () => {
+      logger.info(`=================================`);
+      logger.info(`======= ENV: ${this.env} =======`);
+      logger.info(`🚀 App listening on the port ${this.port}`);
+      logger.info(`=================================`);
+    });
+  }
+
+  private async connectToDatabase() {
+    return AppDataSource.initialize();
+  }
+
+  private async connectToRedis() {
+    const redis = RedisService.getInstance().getClient();
+    await redis.connect();
   }
 
   private initializeMiddlewares() {

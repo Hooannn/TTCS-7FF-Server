@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-empty-interface */
+import { UserRole } from '@/entity';
 import type { Request } from 'express';
 import type { JwtPayload } from 'jsonwebtoken';
 export interface RequestWithUser extends Request {
@@ -7,7 +8,5 @@ export interface RequestWithUser extends Request {
 
 export interface AuthJwtPayload extends JwtPayload {
   userId: string;
-  role?: IRole;
+  role?: UserRole;
 }
-
-type IRole = 'User' | 'Admin' | 'SuperAdmin';

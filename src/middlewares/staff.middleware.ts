@@ -4,13 +4,13 @@ import { AuthJwtPayload, RequestWithUser } from '@interfaces/auth.interface';
 import AuthService from '@/services/auth.service';
 import { errorStatus } from '@/config';
 import { UserRole } from '@/entity';
-const adminMiddleware = async (req: RequestWithUser, res: Response, next: NextFunction) => {
+const staffMiddleware = async (req: RequestWithUser, res: Response, next: NextFunction) => {
   try {
     const authService = new AuthService();
     const Authorization = req.cookies['Authorization'] || (req.header('Authorization') ? req.header('Authorization').split('Bearer ')[1] : null);
     if (Authorization) {
       const decodedToken = authService.verifyAccessToken(Authorization) as AuthJwtPayload;
-      if (decodedToken.role !== UserRole.Admin) next(new HttpException(403, errorStatus.NO_PERMISSIONS));
+      if (![UserRole.Admin, UserRole.Staff].includes(decodedToken.role)) next(new HttpException(403, errorStatus.NO_PERMISSIONS));
       req.auth = decodedToken;
       next();
     } else {
@@ -21,4 +21,4 @@ const adminMiddleware = async (req: RequestWithUser, res: Response, next: NextFu
   }
 };
 
-export default adminMiddleware;
+export default staffMiddleware;

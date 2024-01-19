@@ -30,6 +30,7 @@
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.7.1",
     "nodemailer": "^6.8.0",
+    "redis": "^4.6.12",
     "reflect-metadata": "^0.2.1",
     "socket.io": "^4.5.3",
     "typeorm": "^0.3.19",

@@ -16,57 +16,54 @@ import {
 import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@config';
 import NodemailerService from './nodemailer.service';
-import OrdersService from './orders.service';
 import axios from 'axios';
 import { User, UserRole } from '@/entity';
 import { AppDataSource } from '@/data-source';
+import RedisService from './redis.service';
 class AuthService {
   private jwt = jwt;
-  private User = User;
-  private userRepositoy = AppDataSource.getRepository(User);
+  private redisClient = RedisService.getInstance().getClient();
+  private userRepository = AppDataSource.getRepository(User);
   private nodemailerService = new NodemailerService();
-  private ordersService = new OrdersService();
   public async signUpByEmail({ email, password, firstName, lastName }: { email: string; password: string; firstName: string; lastName: string }) {
-    const isEmailExisted = await this.userRepositoy.exists({ where: { email } });
+    const isEmailExisted = await this.userRepository.existsBy({ email, isActive: 1 });
     if (isEmailExisted) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
     const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
-    const user = this.userRepositoy.create({
+    const user = this.userRepository.create({
       email,
       password: hashedPassword,
       role: UserRole.User,
       firstName,
       lastName,
     });
-    await this.userRepositoy.save(user);
+    await this.userRepository.save(user);
     return { email, password };
   }
 
   public async signInByEmail({ email, password }: { email: string; password: string }) {
-    const target = await this.User.findOne({ email });
-    if (!target) throw new HttpException(400, errorStatus.UNREGISTERED);
-    const isPasswordMatched = compareSync(password, target.password.toString());
+    const user = await this.userRepository.findOneBy({ email, isActive: 1 });
+    if (!user) throw new HttpException(400, errorStatus.UNREGISTERED);
+    const isPasswordMatched = compareSync(password, user.password.toString());
     if (!isPasswordMatched) throw new HttpException(400, errorStatus.WRONG_PASSWORD);
-    const refreshToken = this.generateRefreshToken({ userId: target._id.toString() });
-    const accessToken = this.generateAccessToken({ userId: target._id.toString(), role: target.role.toString() as AuthJwtPayload['role'] });
-    const user = await this.User.findByIdAndUpdate(target._id.toString(), { refreshToken }, { returnOriginal: false }).select('-password');
+    const refreshToken = this.generateRefreshToken({ userId: user.userId });
+    const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
+    delete user.password;
     return { user, refreshToken, accessToken };
   }
 
   public async getAccessToken(refreshToken: string) {
     if (!refreshToken) throw new HttpException(401, errorStatus.NO_CREDENTIALS);
     const { userId: refreshUserId } = this.verifyRefreshToken(refreshToken);
-    const user = await this.User.findById(refreshUserId);
+    const user = await this.userRepository.findOneBy({ userId: refreshUserId, isActive: 1 });
     if (!user) throw new HttpException(400, errorStatus.INVALID_TOKEN_PAYLOAD);
-    const accessToken = this.generateAccessToken({ userId: user._id.toString(), role: user.role });
+    const accessToken = this.generateAccessToken({ userId: user.userId.toString(), role: user.role });
     return { accessToken };
   }
 
   public async forgotPassword(email: string, locale: string) {
-    const user = await this.User.findOne({ email });
+    const user = await this.userRepository.findOneBy({ email, isActive: 1 });
     if (!user) throw new HttpException(400, errorStatus.UNREGISTERED);
-    const blackJti = new this.Jti({ isUsed: false });
-    await blackJti.save();
-    const token = this.generateResetPasswordToken({ email, jti: blackJti._id.toString() });
+    const token = this.generateResetPasswordToken({ email });
     const resetPasswordUrl = `${CLIENT_URL}/auth?type=reset&token=${token}`;
     await this.nodemailerService.sendResetPasswordMail(email, user?.firstName, resetPasswordUrl, locale);
     return { token };
@@ -74,59 +71,56 @@ class AuthService {
 
   public async resetPassword(newPassword: string, token: string) {
     const decodedToken = this.verifyResetPasswordToken(token) as JwtPayload;
-    const jti = await this.Jti.findById(decodedToken?.jti.toString());
-    if (jti.isUsed) throw new HttpException(400, errorStatus.RESET_PASSWORD_EXPIRED);
+    const email = decodedToken.email;
+    const storedToken = await this.redisClient.get(`reset_password_token:${email}`);
+    if (!storedToken) throw new HttpException(400, errorStatus.RESET_PASSWORD_EXPIRED);
+    if (storedToken !== token) throw new HttpException(400, errorStatus.INVALID_RESET_PASSWORD_TOKEN);
     const newHashedPassword = hashSync(newPassword, parseInt(SALTED_PASSWORD));
-    await this.User.findOneAndUpdate({ email: decodedToken.email }, { password: newHashedPassword });
-    await jti.update({ isUsed: true });
+    await this.userRepository.update({ email }, { password: newHashedPassword });
     return { email: decodedToken.email, password: newPassword };
   }
 
   public async deactivateAccount({ userId, password }: { userId: string; password: string }) {
-    const target = await this.User.findById(userId);
-    if (!target) throw new HttpException(400, errorStatus.USER_NOT_FOUND);
-    const isPasswordMatched = compareSync(password, target.password?.toString());
+    const user = await this.userRepository.findOneBy({ userId, isActive: 1 });
+    if (!user) throw new HttpException(400, errorStatus.USER_NOT_FOUND);
+    const isPasswordMatched = compareSync(password, user.password?.toString());
     if (!isPasswordMatched) throw new HttpException(400, errorStatus.WRONG_PASSWORD);
-    const [orders, reservations] = await Promise.all([
-      await this.ordersService.getOrdersByCustomerId({ customerId: userId, userId }),
-      await this.reservationsService.getUserReservations({ customerEmail: target.email, sort: null }),
-    ]);
-    orders.forEach(async order => {
-      if (order.status !== 'Done') {
-        await order.update({ status: 'Cancelled' });
-      }
-    });
-    reservations.forEach(async order => {
-      await order.update({ status: 'Done' });
-    });
-    const deactiveUser = new this.DeactiveUser(({ ...target } as any)._doc);
-    await deactiveUser.save();
-    return this.User.findByIdAndDelete(userId);
+    return await this.userRepository.update({ userId }, { isActive: 0 });
   }
 
   public async getUser(id: string) {
-    return await this.User.findById(id).select('-password -refreshToken');
+    return await this.userRepository.findOne({
+      where: { userId: id, isActive: 1 },
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt'],
+    });
   }
 
   public async googleAuthentication(googleAccessToken: string) {
     const userData = await this.getGoogleUserData(googleAccessToken);
     const { email_verified, family_name, given_name, email, picture } = userData;
     if (!email_verified) throw new HttpException(400, errorStatus.EMAIL_VERIFICATION_FAILED);
-    const target = await this.User.findOne({ email });
-    if (target) {
-      const refreshToken = this.generateRefreshToken({ userId: target._id.toString() });
-      const accessToken = this.generateAccessToken({ userId: target._id.toString(), role: target.role.toString() as AuthJwtPayload['role'] });
-      const user = await this.User.findByIdAndUpdate(target._id.toString(), { refreshToken }, { returnOriginal: false }).select('-password');
+    const user = await this.userRepository.findOneBy({ email });
+    if (user) {
+      const refreshToken = this.generateRefreshToken({ userId: user.userId });
+      const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
       return { user, refreshToken, accessToken, message: successStatus.GOOGLE_SIGN_IN_SUCCESSFULLY };
     } else {
       const password = email + GG_CLIENT_ID;
       const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
-      const user = new this.User({ email, password: hashedPassword, role: 'User', firstName: given_name, lastName: family_name, avatar: picture });
-      await user.save();
-      const refreshToken = this.generateRefreshToken({ userId: user._id.toString() });
-      const accessToken = this.generateAccessToken({ userId: user._id.toString(), role: user.role.toString() as AuthJwtPayload['role'] });
-      const userWithTokens = await this.User.findByIdAndUpdate(user._id.toString(), { refreshToken }, { returnOriginal: false }).select('-password');
-      return { user: userWithTokens, refreshToken, accessToken, message: successStatus.GOOGLE_SIGN_UP_SUCCESSFULLY };
+      const user = this.userRepository.create({
+        email,
+        password: hashedPassword,
+        role: UserRole.User,
+        firstName: given_name,
+        lastName: family_name,
+        avatar: picture,
+      });
+      await this.userRepository.save(user);
+      const refreshToken = this.generateRefreshToken({ userId: user.userId });
+      const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
+
+      delete user.password;
+      return { user, refreshToken, accessToken, message: successStatus.GOOGLE_SIGN_UP_SUCCESSFULLY };
     }
   }
 
@@ -148,19 +142,23 @@ class AuthService {
   }
 
   private generateAccessToken({ userId, role }: AuthJwtPayload) {
-    return this.jwt.sign({ userId, role }, ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_LIFE });
+    return this.jwt.sign({ userId, role }, ACCESS_TOKEN_SECRET, { expiresIn: parseInt(ACCESS_TOKEN_LIFE) ?? 3600 });
   }
 
   private generateRefreshToken({ userId }: AuthJwtPayload) {
-    return this.jwt.sign({ userId }, REFRESH_TOKEN_SECRET, { expiresIn: REFRESH_TOKEN_LIFE });
+    const token = this.jwt.sign({ userId }, REFRESH_TOKEN_SECRET, { expiresIn: parseInt(REFRESH_TOKEN_LIFE) ?? 2592000 });
+    this.redisClient.setEx(`refresh_token:${userId}`, parseInt(REFRESH_TOKEN_LIFE) ?? 2592000, token);
+    return token;
   }
 
   private verifyRefreshToken(token: string) {
     return this.jwt.verify(token, REFRESH_TOKEN_SECRET) as AuthJwtPayload;
   }
 
-  private generateResetPasswordToken({ email, jti }: { email: string; jti: string }) {
-    return this.jwt.sign({ email, jti }, RESETPASSWORD_TOKEN_SECRET, { expiresIn: RESETPASSWORD_TOKEN_LIFE });
+  private generateResetPasswordToken({ email }: { email: string }) {
+    const token = this.jwt.sign({ email }, RESETPASSWORD_TOKEN_SECRET, { expiresIn: parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600 });
+    this.redisClient.setEx(`reset_password_token:${email}`, parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600, token);
+    return token;
   }
 
   private verifyResetPasswordToken(token: string) {

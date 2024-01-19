@@ -4,7 +4,6 @@ export { errorStatus } from './error.status';
 export { successStatus } from './success.status';
 export const CREDENTIALS = process.env.CREDENTIALS === 'true';
 export const {
-  DB_URI,
   NODE_ENV,
   ORIGIN,
   PORT,
@@ -24,4 +23,12 @@ export const {
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,
   GG_CLIENT_ID,
+  DB_HOST,
+  DB_PORT,
+  DB_USERNAME,
+  DB_PASSWORD,
+  DB_NAME,
+  REDIS_HOST,
+  REDIS_PASSWORD,
+  REDIS_PORT,
 } = process.env;
