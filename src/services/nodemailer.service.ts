@@ -1,7 +1,6 @@
 import nodemailer, { SendMailOptions, SentMessageInfo } from 'nodemailer';
 import { GMAIL_PASSWORD, GMAIL_USER } from '@/config';
 import { forgotPasswordTemplate, orderConfirmationTemplate } from '@/templates';
-import { IOrder } from '@/models/Order';
 import { bookingConfirmationTemplate } from '@/templates/bookingConfirmation';
 class NodemailerService {
   private transporter = nodemailer.createTransport({

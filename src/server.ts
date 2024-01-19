@@ -15,8 +15,8 @@ validateEnv();
 const app = new App([
   new IndexRoute(),
   new AuthRoute(),
-  /*
   new UsersRoute(),
+  /* Turn some route on after successfully migrated its service
   new FilesRoute(),
   new ProductsRoute(),
   new VouchersRoute(),
