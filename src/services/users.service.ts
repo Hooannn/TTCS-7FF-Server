@@ -1,40 +1,69 @@
 import { errorStatus, SALTED_PASSWORD } from '@/config';
+import { AppDataSource } from '@/data-source';
+import { CartItem, CartItemStatus, Order, User } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
-import Order from '@/models/Order';
-import User, { IUser } from '@/models/User';
 import { getStartOfTimeframe, getNow, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { compareSync, hashSync } from 'bcrypt';
 class UsersService {
-  private User = User;
-  private Order = Order;
+  private userRepository = AppDataSource.getRepository(User);
+  private orderRepository = AppDataSource.getRepository(Order);
+  private cartItemRepository = AppDataSource.getRepository(CartItem);
+
+  public async findUserById(id: string) {
+    return await this.userRepository.findOne({
+      where: { userId: id, isActive: 1 },
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt'],
+    });
+  }
+
+  public async findUserByEmail(email: string) {
+    return await this.userRepository.findOne({
+      where: { email: email, isActive: 1 },
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt'],
+    });
+  }
 
   public async getAllUsers({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.User.countDocuments(parseFilter).sort(parseSort);
-    const users = await this.User.find(parseFilter, null, { limit, skip }).sort(parseSort).select('-password');
+    const total = await this.userRepository.count({ select: ['userId'], where: parseFilter, order: parseSort });
+    const users = await this.userRepository.find({
+      where: parseFilter,
+      order: parseSort,
+      skip,
+      take: limit,
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt', 'isActive'],
+    });
     return { total, users };
   }
 
-  public async getUserById(id: string) {
-    return await this.User.findById(id);
-  }
-
-  public async addUser(reqUser: IUser) {
+  public async addUser(reqUser: User) {
     const { firstName, lastName, avatar, password, phoneNumber, role, email, address } = reqUser;
-    const isEmailExisted = await this.User.findOne({ email });
+    const isEmailExisted = await this.userRepository.existsBy({ email, isActive: 1 });
     if (isEmailExisted) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
     const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
-    const user = new this.User({ email, password: hashedPassword, role, firstName, lastName, avatar, phoneNumber, address });
-    await user.save();
+    const user = this.userRepository.create({
+      firstName,
+      lastName,
+      avatar,
+      password: hashedPassword,
+      phoneNumber,
+      role,
+      email,
+      address,
+    });
+    await this.userRepository.save(user);
+
+    delete user.password;
+    delete user.isActive;
     return user;
   }
 
   public async deleteUser(userId: string) {
-    return this.User.findByIdAndDelete(userId);
+    return this.userRepository.update({ userId }, { isActive: 0 });
   }
 
-  public async updateUser(userId: string, user: IUser) {
+  public async updateUser(userId: string, user: User) {
     let hashedPassword = null;
     const { resetPassword, lastName, firstName, phoneNumber, address, avatar, role } = user as any;
     if (resetPassword) {
@@ -43,94 +72,61 @@ class UsersService {
     const updatedUser = hashedPassword
       ? { password: hashedPassword, lastName, firstName, phoneNumber, address, avatar, role }
       : { lastName, firstName, phoneNumber, address, avatar, role };
-    return await this.User.findOneAndUpdate({ _id: userId }, updatedUser, { returnOriginal: false });
+    return await this.userRepository.update({ userId }, updatedUser);
   }
 
   public async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const target = await this.getUserById(userId);
-    const isPasswordMatched = compareSync(currentPassword, target.password.toString());
+    const user = await this.findUserById(userId);
+    const isPasswordMatched = compareSync(currentPassword, user.password.toString());
     if (!isPasswordMatched) throw new HttpException(400, errorStatus.WRONG_PASSWORD);
     const hashedPassword = hashSync(newPassword, parseInt(SALTED_PASSWORD));
-    return await this.User.findOneAndUpdate({ _id: userId }, { password: hashedPassword }, { returnOriginal: false });
+    await this.userRepository.update({ userId }, { password: hashedPassword });
+    return user;
   }
 
   public async getSummaryUsers(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
-    const currentCount = await this.User.countDocuments({
-      createdAt: { $gte: startDate, $lte: to },
-    });
-    const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
-    const previousCount = await this.User.countDocuments({
-      createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
-    });
-    return { currentCount, previousCount };
+    return { currentCount: 0, previousCount: 0 };
   }
 
   public async getCartItems(userId: string) {
-    const { cartItems } = await this.User.findById(userId)
-      .select('cartItems')
-      .populate({
-        path: 'cartItems.product',
-        populate: {
-          path: 'category',
-          select: 'name',
-        },
-      });
-    return cartItems.filter(item => item.product !== null);
+    const cartItems = await this.cartItemRepository.find({ where: { userId, status: CartItemStatus.Active }, relations: ['product'] });
+    return { cartItems };
   }
 
   public async addCartItem({ userId, product, quantity }: { userId: string; product: string; quantity: number }) {
-    const { modifiedCount } = await User.updateOne(
-      { _id: userId, 'cartItems.product': product },
-      { $inc: { 'cartItems.$[item].quantity': quantity } },
-      { arrayFilters: [{ 'item.product': product }] },
-    );
-
-    if (modifiedCount === 0) {
-      await User.updateOne({ _id: userId }, { $addToSet: { cartItems: { product, quantity } } });
+    const cartItem = await this.cartItemRepository.findOne({ where: { userId, productId: product, status: CartItemStatus.Active } });
+    if (cartItem) {
+      cartItem.quantity += quantity;
+      await this.cartItemRepository.save(cartItem);
+    } else {
+      const newCartItem = this.cartItemRepository.create({ userId, productId: product, quantity });
+      await this.cartItemRepository.save(newCartItem);
     }
   }
 
   public async removeCartItem({ userId, product, quantity }: { userId: string; product: string; quantity: number }) {
-    await User.updateOne({ _id: userId }, { $inc: { 'cartItems.$[item].quantity': -quantity } }, { arrayFilters: [{ 'item.product': product }] });
-    await User.updateOne({ _id: userId, 'cartItems.quantity': { $lte: 0 } }, { $pull: { cartItems: { quantity: { $lte: 0 } } } });
+    const cartItem = await this.cartItemRepository.findOne({ where: { userId, productId: product, status: CartItemStatus.Active } });
+    if (cartItem) {
+      const newQuantity = cartItem.quantity - quantity;
+      if (newQuantity < 1) {
+        cartItem.status = CartItemStatus.Removed;
+      } else {
+        cartItem.quantity = newQuantity;
+      }
+      await this.cartItemRepository.save(cartItem);
+    }
   }
 
   public async resetCartItems(userId: string) {
-    return await this.User.findByIdAndUpdate(userId, { cartItems: [] });
+    return await this.cartItemRepository.update({ userId }, { status: CartItemStatus.Removed });
   }
 
   public async getNewestUsers(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-    return await User.find({ createdAt: { $gte: startDate } })
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    return [];
   }
 
   public async getUsersWithHighestTotalOrderValue(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-    const ordersInTimeRange = await this.Order.find({ createdAt: { $gte: startDate }, status: 'Done' }).select('customerId totalPrice');
-
-    const totalOrderValueByUser = ordersInTimeRange.reduce((result, order) => {
-      const userId = order.customerId.toString();
-      if (!result[userId]) {
-        result[userId] = {
-          user: order.customerId,
-          totalOrderValue: 0,
-        };
-      }
-      result[userId].totalOrderValue += order.totalPrice;
-      return result;
-    }, {});
-
-    const sortedUsers = Object.values(totalOrderValueByUser)
-      .sort((a: any, b: any) => b.totalOrderValue - a.totalOrderValue)
-      .slice(0, limit);
-    const users = await this.User.find({ _id: sortedUsers.map((sortedUser: any) => sortedUser.user) });
-    return users.map((user: any) => ({
-      ...user._doc,
-      totalOrderValue: (sortedUsers.find((sortedUser: any) => sortedUser.user.toString() === user._doc._id.toString()) as any)?.totalOrderValue,
-    }));
+    return [];
   }
 }
 

@@ -23,7 +23,7 @@ export class Voucher {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ type: 'bit' })
+  @Column({ type: 'bit', default: () => `b'1'` })
   isActive: number;
 }
 

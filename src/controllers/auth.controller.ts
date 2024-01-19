@@ -49,10 +49,10 @@ class AuthController {
     }
   };
 
-  public getAccessToken = async (req: Request, res: Response, next: NextFunction) => {
+  public refreshToken = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { refreshToken } = req.body;
-      const data = await this.authService.getAccessToken(refreshToken);
+      const data = await this.authService.refreshToken(refreshToken);
       res.status(200).json({
         code: 200,
         success: true,
@@ -106,7 +106,7 @@ class AuthController {
   public getUser = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
       const { userId } = req.auth;
-      const data = await this.authService.getUser(userId);
+      const data = await this.authService.findUserById(userId);
       res.status(200).json({ code: 200, success: true, data, message: 'Success' });
     } catch (error) {
       next(error);

@@ -26,17 +26,24 @@ class AuthService {
   private userRepository = AppDataSource.getRepository(User);
   private nodemailerService = new NodemailerService();
   public async signUpByEmail({ email, password, firstName, lastName }: { email: string; password: string; firstName: string; lastName: string }) {
-    const isEmailExisted = await this.userRepository.existsBy({ email, isActive: 1 });
-    if (isEmailExisted) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
+    const exists = await this.userRepository.existsBy({ email, isActive: 1 });
+    if (exists) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
     const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
-    const user = this.userRepository.create({
+    // Turn on active status when user sign up again
+    const deactiveUser = await this.userRepository.findOneBy({ email, isActive: 0 });
+    if (deactiveUser) {
+      await this.userRepository.update({ email, password: hashedPassword }, { isActive: 1 });
+      return { email, password };
+    }
+    // Create new user
+    const newUser = this.userRepository.create({
       email,
       password: hashedPassword,
       role: UserRole.User,
       firstName,
       lastName,
     });
-    await this.userRepository.save(user);
+    await this.userRepository.save(newUser);
     return { email, password };
   }
 
@@ -46,18 +53,27 @@ class AuthService {
     const isPasswordMatched = compareSync(password, user.password.toString());
     if (!isPasswordMatched) throw new HttpException(400, errorStatus.WRONG_PASSWORD);
     const refreshToken = this.generateRefreshToken({ userId: user.userId });
-    const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
+    const accessToken = this.generateAccessToken({
+      userId: user.userId,
+      role: user.role.toString() as AuthJwtPayload['role'],
+    });
+
     delete user.password;
+    delete user.isActive;
+
     return { user, refreshToken, accessToken };
   }
 
-  public async getAccessToken(refreshToken: string) {
+  public async refreshToken(refreshToken: string) {
     if (!refreshToken) throw new HttpException(401, errorStatus.NO_CREDENTIALS);
     const { userId: refreshUserId } = this.verifyRefreshToken(refreshToken);
+    const storedToken = await this.redisClient.get(`refresh_token:${refreshUserId}`);
+    if (storedToken !== refreshToken) throw new HttpException(401, errorStatus.INVALID_TOKEN);
     const user = await this.userRepository.findOneBy({ userId: refreshUserId, isActive: 1 });
     if (!user) throw new HttpException(400, errorStatus.INVALID_TOKEN_PAYLOAD);
     const accessToken = this.generateAccessToken({ userId: user.userId.toString(), role: user.role });
-    return { accessToken };
+    const newRefreshToken = this.generateRefreshToken({ userId: user.userId.toString() });
+    return { accessToken, refreshToken: newRefreshToken };
   }
 
   public async forgotPassword(email: string, locale: string) {
@@ -88,7 +104,7 @@ class AuthService {
     return await this.userRepository.update({ userId }, { isActive: 0 });
   }
 
-  public async getUser(id: string) {
+  public async findUserById(id: string) {
     return await this.userRepository.findOne({
       where: { userId: id, isActive: 1 },
       select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt'],
@@ -102,7 +118,15 @@ class AuthService {
     const user = await this.userRepository.findOneBy({ email });
     if (user) {
       const refreshToken = this.generateRefreshToken({ userId: user.userId });
-      const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
+      const accessToken = this.generateAccessToken({
+        userId: user.userId,
+        role: user.role.toString() as AuthJwtPayload['role'],
+      });
+      if (!user.isActive) {
+        await this.userRepository.update({ userId: user.userId }, { isActive: 1 });
+      }
+      delete user.password;
+      delete user.isActive;
       return { user, refreshToken, accessToken, message: successStatus.GOOGLE_SIGN_IN_SUCCESSFULLY };
     } else {
       const password = email + GG_CLIENT_ID;
@@ -117,9 +141,13 @@ class AuthService {
       });
       await this.userRepository.save(user);
       const refreshToken = this.generateRefreshToken({ userId: user.userId });
-      const accessToken = this.generateAccessToken({ userId: user.userId, role: user.role.toString() as AuthJwtPayload['role'] });
+      const accessToken = this.generateAccessToken({
+        userId: user.userId,
+        role: user.role.toString() as AuthJwtPayload['role'],
+      });
 
       delete user.password;
+      delete user.isActive;
       return { user, refreshToken, accessToken, message: successStatus.GOOGLE_SIGN_UP_SUCCESSFULLY };
     }
   }
@@ -146,7 +174,9 @@ class AuthService {
   }
 
   private generateRefreshToken({ userId }: AuthJwtPayload) {
-    const token = this.jwt.sign({ userId }, REFRESH_TOKEN_SECRET, { expiresIn: parseInt(REFRESH_TOKEN_LIFE) ?? 2592000 });
+    const token = this.jwt.sign({ userId }, REFRESH_TOKEN_SECRET, {
+      expiresIn: parseInt(REFRESH_TOKEN_LIFE) ?? 2592000,
+    });
     this.redisClient.setEx(`refresh_token:${userId}`, parseInt(REFRESH_TOKEN_LIFE) ?? 2592000, token);
     return token;
   }
@@ -156,7 +186,9 @@ class AuthService {
   }
 
   private generateResetPasswordToken({ email }: { email: string }) {
-    const token = this.jwt.sign({ email }, RESETPASSWORD_TOKEN_SECRET, { expiresIn: parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600 });
+    const token = this.jwt.sign({ email }, RESETPASSWORD_TOKEN_SECRET, {
+      expiresIn: parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600,
+    });
     this.redisClient.setEx(`reset_password_token:${email}`, parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600, token);
     return token;
   }

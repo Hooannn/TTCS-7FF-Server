@@ -14,11 +14,11 @@ validateEnv();
 
 const app = new App([
   new IndexRoute(),
+  new AuthRoute(),
   /*
   new UsersRoute(),
   new FilesRoute(),
   new ProductsRoute(),
-  new AuthRoute(),
   new VouchersRoute(),
   new OrdersRoute(),
   new StatisticsRoute(),
