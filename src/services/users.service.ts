@@ -118,7 +118,7 @@ class UsersService {
   }
 
   public async resetCartItems(userId: string) {
-    return await this.cartItemRepository.update({ userId }, { status: CartItemStatus.Removed });
+    return await this.cartItemRepository.update({ userId, status: CartItemStatus.Active }, { status: CartItemStatus.Removed });
   }
 
   public async getNewestUsers(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
