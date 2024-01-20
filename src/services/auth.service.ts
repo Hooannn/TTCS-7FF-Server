@@ -32,7 +32,7 @@ class AuthService {
     // Turn on active status when user sign up again
     const deactiveUser = await this.userRepository.findOneBy({ email, isActive: 0 });
     if (deactiveUser) {
-      await this.userRepository.update({ email, password: hashedPassword }, { isActive: 1 });
+      await this.userRepository.update({ email }, { isActive: 1, password: hashedPassword });
       return { email, password };
     }
     // Create new user
