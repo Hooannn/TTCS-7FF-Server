@@ -42,6 +42,7 @@ class AuthService {
       role: UserRole.User,
       firstName,
       lastName,
+      avatar: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSqtrHsVnbfPaERaPm8v_vcvIXYxCGR0Lnbcw&usqp=CAU',
     });
     await this.userRepository.save(newUser);
     return { email, password };
@@ -138,7 +139,7 @@ class AuthService {
         role: UserRole.User,
         firstName: given_name,
         lastName: family_name,
-        avatar: picture,
+        avatar: picture ?? 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSqtrHsVnbfPaERaPm8v_vcvIXYxCGR0Lnbcw&usqp=CAU',
       });
       await this.userRepository.save(user);
       const refreshToken = this.generateRefreshToken({ userId: user.userId });

@@ -1,4 +1,6 @@
-import { successStatus } from '@/config';
+import { errorStatus, successStatus } from '@/config';
+import { User, UserRole } from '@/entity';
+import { HttpException } from '@/exceptions/HttpException';
 import { RequestWithUser } from '@/interfaces';
 import UsersService from '@/services/users.service';
 import { NextFunction, Request, Response } from 'express';
@@ -22,7 +24,7 @@ class UsersController {
   public addUser = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const reqUser = req.body;
-      const user = await this.usersService.addUser(reqUser);
+      const user = await this.usersService.addUser(reqUser, UserRole.User);
       res.status(201).json({ code: 201, success: true, data: user, message: successStatus.CREATE_SUCCESSFULLY });
     } catch (error) {
       next(error);
@@ -43,7 +45,55 @@ class UsersController {
     try {
       const { id } = req.query;
       const user = req.body;
+      user.role = UserRole.User;
       const updatedUser = await this.usersService.updateUser(id.toString(), user);
+      res.status(200).json({ code: 200, success: true, data: updatedUser, message: successStatus.UPDATE_SUCCESSFULLY });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getAllStaffs = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { skip, limit, filter, sort } = req.query;
+      const { total, users } = await this.usersService.getAllStaffs({
+        skip: parseInt(skip?.toString()),
+        limit: parseInt(limit?.toString()),
+        filter: filter?.toString(),
+        sort: sort?.toString(),
+      });
+      res.status(200).json({ code: 200, success: true, data: users, total, took: users.length });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public addStaff = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const reqUser = req.body;
+      const user = await this.usersService.addUser(reqUser, UserRole.Staff);
+      res.status(201).json({ code: 201, success: true, data: user, message: successStatus.CREATE_SUCCESSFULLY });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public deleteStaff = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.query;
+      await this.usersService.deleteStaff(id.toString());
+      res.status(200).json({ code: 200, success: true, message: successStatus.DELETE_SUCCESSFULLY });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public updateStaff = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.query;
+      const user = req.body;
+      if (user?.role === UserRole.Admin) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
+      const updatedUser = await this.usersService.updateStaff(id.toString(), user);
       res.status(200).json({ code: 200, success: true, data: updatedUser, message: successStatus.UPDATE_SUCCESSFULLY });
     } catch (error) {
       next(error);

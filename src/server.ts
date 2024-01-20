@@ -16,8 +16,8 @@ const app = new App([
   new IndexRoute(),
   new AuthRoute(),
   new UsersRoute(),
-  /* Turn some route on after successfully migrated its service
   new FilesRoute(),
+  /* Turn some route on after successfully migrated its service
   new ProductsRoute(),
   new VouchersRoute(),
   new OrdersRoute(),

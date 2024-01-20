@@ -34,7 +34,7 @@ class App {
       await this.connectToRedis();
       this.listen();
     } catch (error) {
-      logger.error(`X Error while start app ${JSON.stringify(error)}`);
+      logger.error(`❌ Error while start app\n${JSON.stringify(error)}`);
     }
   }
 
@@ -43,11 +43,14 @@ class App {
   }
 
   private listen() {
-    this.app.listen(this.port, () => {
+    const listener = this.app.listen(this.port, () => {
       logger.info(`=================================`);
       logger.info(`======= ENV: ${this.env} =======`);
       logger.info(`🚀 App listening on the port ${this.port}`);
       logger.info(`=================================`);
+    });
+    listener.on('error', (error: any) => {
+      logger.error(`❌ Error while listen to port ${this.port}:\n${JSON.stringify(error)}`);
     });
   }
 

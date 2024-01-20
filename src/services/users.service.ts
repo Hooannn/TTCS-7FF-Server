@@ -1,9 +1,10 @@
 import { errorStatus, SALTED_PASSWORD } from '@/config';
 import { AppDataSource } from '@/data-source';
-import { CartItem, CartItemStatus, Order, User } from '@/entity';
+import { CartItem, CartItemStatus, Order, User, UserRole } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { getStartOfTimeframe, getNow, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { compareSync, hashSync } from 'bcrypt';
+import { FindManyOptions, FindOptions, FindOptionsWhere } from 'typeorm';
 class UsersService {
   private userRepository = AppDataSource.getRepository(User);
   private orderRepository = AppDataSource.getRepository(Order);
@@ -26,19 +27,41 @@ class UsersService {
   public async getAllUsers({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.userRepository.count({ select: ['userId'], where: parseFilter, order: parseSort });
-    const users = await this.userRepository.find({
-      where: parseFilter,
+    const where: FindOptionsWhere<User> = { ...parseFilter, role: UserRole.User, isActive: 1 };
+    const total = await this.userRepository.count({ select: ['userId'], where, order: parseSort });
+    const findOptions: FindManyOptions<User> = {
+      where,
       order: parseSort,
       skip,
       take: limit,
       select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt', 'isActive'],
-    });
+    };
+    if (!skip) delete findOptions.skip;
+    if (!limit) delete findOptions.take;
+    const users = await this.userRepository.find(findOptions);
     return { total, users };
   }
 
-  public async addUser(reqUser: User) {
-    const { firstName, lastName, avatar, password, phoneNumber, role, email, address } = reqUser;
+  public async getAllStaffs({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
+    const parseFilter = JSON.parse(filter ? filter : '{}');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const where: FindOptionsWhere<User> = { ...parseFilter, role: UserRole.Staff, isActive: 1 };
+    const total = await this.userRepository.count({ select: ['userId'], where, order: parseSort });
+    const findOptions: FindManyOptions<User> = {
+      where,
+      order: parseSort,
+      skip,
+      take: limit ?? 0,
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt', 'isActive'],
+    };
+    if (!skip) delete findOptions.skip;
+    if (!limit) delete findOptions.take;
+    const users = await this.userRepository.find(findOptions);
+    return { total, users };
+  }
+
+  public async addUser(reqUser: User, role: UserRole) {
+    const { firstName, lastName, avatar, password, phoneNumber, email, address } = reqUser;
     const isEmailExisted = await this.userRepository.existsBy({ email, isActive: 1 });
     if (isEmailExisted) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
     const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
@@ -60,7 +83,11 @@ class UsersService {
   }
 
   public async deleteUser(userId: string) {
-    return this.userRepository.update({ userId }, { isActive: 0 });
+    return this.userRepository.update({ userId, role: UserRole.User }, { isActive: 0 });
+  }
+
+  public async deleteStaff(userId: string) {
+    return this.userRepository.update({ userId, role: UserRole.Staff }, { isActive: 0 });
   }
 
   public async updateUser(userId: string, user: User) {
@@ -72,15 +99,29 @@ class UsersService {
     const updatedUser = hashedPassword
       ? { password: hashedPassword, lastName, firstName, phoneNumber, address, avatar, role }
       : { lastName, firstName, phoneNumber, address, avatar, role };
-    return await this.userRepository.update({ userId }, updatedUser);
+    return await this.userRepository.update({ userId, role: UserRole.User }, updatedUser);
+  }
+
+  public async updateStaff(userId: string, user: User) {
+    let hashedPassword = null;
+    const { resetPassword, lastName, firstName, phoneNumber, address, avatar, role } = user as any;
+    if (resetPassword) {
+      hashedPassword = hashSync(resetPassword, parseInt(SALTED_PASSWORD));
+    }
+    const updatedUser = hashedPassword
+      ? { password: hashedPassword, lastName, firstName, phoneNumber, address, avatar, role }
+      : { lastName, firstName, phoneNumber, address, avatar, role };
+    return await this.userRepository.update({ userId, role: UserRole.Staff }, updatedUser);
   }
 
   public async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const user = await this.findUserById(userId);
+    const user = await this.userRepository.findOneBy({ userId, isActive: 1 });
     const isPasswordMatched = compareSync(currentPassword, user.password.toString());
     if (!isPasswordMatched) throw new HttpException(400, errorStatus.WRONG_PASSWORD);
     const hashedPassword = hashSync(newPassword, parseInt(SALTED_PASSWORD));
     await this.userRepository.update({ userId }, { password: hashedPassword });
+    delete user.password;
+    delete user.isActive;
     return user;
   }
 
@@ -89,8 +130,7 @@ class UsersService {
   }
 
   public async getCartItems(userId: string) {
-    const cartItems = await this.cartItemRepository.find({ where: { userId, status: CartItemStatus.Active }, relations: ['product'] });
-    return { cartItems };
+    return await this.cartItemRepository.find({ where: { userId, status: CartItemStatus.Active }, relations: ['product'] });
   }
 
   public async addCartItem({ userId, product, quantity }: { userId: string; product: string; quantity: number }) {
