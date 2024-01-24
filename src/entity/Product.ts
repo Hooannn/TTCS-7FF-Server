@@ -14,7 +14,10 @@ export class Product {
   nameEn: string;
 
   @Column({ type: 'text' })
-  description: string;
+  descriptionVi: string;
+
+  @Column({ type: 'text' })
+  descriptionEn: string;
 
   @Column('decimal', { precision: 10, scale: 2 })
   currentPrice: number;
