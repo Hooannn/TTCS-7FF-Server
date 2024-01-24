@@ -6,7 +6,10 @@ export class Category {
   categoryId: string;
 
   @Column()
-  name: string;
+  nameVi: string;
+
+  @Column()
+  nameEn: string;
 
   @Column({ nullable: true })
   icon: string;
