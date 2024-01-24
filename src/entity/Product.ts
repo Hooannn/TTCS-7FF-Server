@@ -8,7 +8,10 @@ export class Product {
   productId: string;
 
   @Column()
-  name: string;
+  nameVi: string;
+
+  @Column()
+  nameEn: string;
 
   @Column({ type: 'text' })
   description: string;
