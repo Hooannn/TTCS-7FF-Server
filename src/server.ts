@@ -17,10 +17,10 @@ const app = new App([
   new AuthRoute(),
   new UsersRoute(),
   new FilesRoute(),
+  new OrdersRoute(),
   /* Turn some route on after successfully migrated its service
   new ProductsRoute(),
   new VouchersRoute(),
-  new OrdersRoute(),
   new StatisticsRoute(),
   new CategoriesRoute(),
   */
