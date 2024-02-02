@@ -59,14 +59,7 @@ class OrdersService {
   }
 
   public async getOrderById({ orderId, userId, role }: { orderId: string; userId?: string; role?: UserRole }) {
-    const order = await this.orderRepository
-      .createQueryBuilder('order')
-      .where('order.orderId = :orderId', { orderId })
-      .leftJoinAndSelect('order.items', 'item')
-      .leftJoinAndSelect('item.product', 'product')
-      .leftJoinAndSelect('order.voucher', 'voucher')
-      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
-      .getOne();
+    const order = await this.getDetailedOrderById(orderId);
 
     if (order.customerId.toString() !== userId.toString() && role === UserRole.User) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
     return order;
@@ -102,40 +95,37 @@ class OrdersService {
   }
 
   public async createOrder(order: Partial<Order>) {
-    const newOrder = new this.Order(order);
-    await newOrder.save();
-    return newOrder;
+    // TODO:
+    // Calculate total price
+    // Create order items
+    // return newOrder;
   }
 
-  public async deleteOrder(orderId: string) {
-    return this.Order.findByIdAndDelete(orderId);
+  public async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string, staffId?: string) {
+    if (status === 'Rejected' && !rejectionReason) throw new HttpException(404, errorStatus.MISSING_REJECTION_REASON);
+    const updateResult = await this.orderRepository.update(
+      { orderId },
+      {
+        status,
+        rejectionReason: status === 'Rejected' ? rejectionReason : null,
+        staffId,
+      },
+    );
+
+    if (updateResult.affected !== 1) throw new HttpException(404, errorStatus.UPDATE_STATUS_FAILED);
+    return await this.getDetailedOrderById(orderId);
   }
 
-  public async updateOrder(orderId: string, order: Order) {
-    return await this.Order.findOneAndUpdate({ _id: orderId }, order, { returnOriginal: false });
-  }
-
-  public async ratingOrder(orderId: string, userId: string, value: number) {
-    const target = await this.Order.findById(orderId);
-    if (!target) throw new HttpException(404, errorStatus.ORDER_NOT_FOUND);
-    if (target.customerId.toString() !== userId) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
-    if (target.status !== 'Done') throw new HttpException(400, 'YOU_CAN_ONLY_RATE_A_COMPLETE_ORDER');
-    if (target.rating) throw new HttpException(409, errorStatus.ORDER_ALREADY_BEEN_RATED);
-
-    const updateValue = value < 1 ? 1 : value > 5 ? 5 : value;
-    await this.Order.findByIdAndUpdate(orderId, { rating: updateValue }, { timestamps: false });
-
-    target.items.forEach(async item => {
-      const product = await this.Product.findById(item.product);
-      if (product) {
-        if (!product.ratingCount) product.ratingCount = 1;
-        const newRating = (product.rating * product.ratingCount + updateValue) / (product.ratingCount + 1);
-        product.ratingCount += 1;
-        product.rating = newRating;
-        await product.save();
-      }
-    });
-    return target;
+  private async getDetailedOrderById(orderId: string) {
+    // Simple find-relation cannot return nested INNER JOIN
+    return await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('order.voucher', 'voucher')
+      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
+      .getOne();
   }
 
   public async getSummaryOrders(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
