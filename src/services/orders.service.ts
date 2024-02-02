@@ -1,25 +1,24 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { errorStatus } from '@/config';
+import { AppDataSource } from '@/data-source';
+import { Order, OrderStatus, UserRole } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
-import Order, { IOrder } from '@/models/Order';
-import { IUser } from '@/models/User';
 import { isSame, getNow, getPreviousTimeframe, getStartOfTimeframe, getEndOfTimeframe } from '@/utils/time';
-import mongoose, { Document, Types } from 'mongoose';
 import type { Dayjs } from 'dayjs';
-import Product from '@/models/Product';
-interface CreateChartParams {
-  orders: (Document<unknown, any, IOrder> &
-    Omit<
-      IOrder & {
-        _id: Types.ObjectId;
-      },
-      never
-    >)[];
-  startDate: Dayjs;
-  columns: number;
-  timeUnit: string;
-  format: string;
-}
+
+// interface CreateChartParams {
+//   orders: (Document<unknown, any, IOrder> &
+//     Omit<
+//       IOrder & {
+//         _id: Types.ObjectId;
+//       },
+//       never
+//     >)[];
+//   startDate: Dayjs;
+//   columns: number;
+//   timeUnit: string;
+//   format: string;
+// }
 
 interface ChartData {
   date: Dayjs;
@@ -27,50 +26,82 @@ interface ChartData {
   totalSales: number;
   totalUnits: number;
 }
-class OrdersService {
-  private Order = Order;
-  private Product = Product;
 
-  public async getOrdersByCustomerId({
-    customerId,
-    userId,
-    role,
-    sort,
-  }: {
-    customerId: string;
-    userId?: string;
-    role?: IUser['role'];
-    sort?: string;
-  }) {
+interface FilterCriteria {
+  customerId?: string;
+  status?: OrderStatus;
+  startTime?: Date;
+  endTime?: Date;
+}
+
+class OrdersService {
+  private orderRepository = AppDataSource.getRepository(Order);
+
+  public async getOrdersByCustomerId({ customerId, userId, role, sort }: { customerId: string; userId?: string; role?: UserRole; sort?: string }) {
     if (customerId.toString() !== userId.toString() && role === 'User') throw new HttpException(403, errorStatus.NO_PERMISSIONS);
-    if (sort === 'status') {
-      const orderOfStatus = ['Processing', 'Delivering', 'Done', 'Cancelled'];
-      return this.Order.aggregate([
-        { $match: { customerId: new mongoose.Types.ObjectId(customerId) } },
-        { $addFields: { __order: { $indexOfArray: [orderOfStatus, '$status'] } } },
-        { $sort: { __order: 1 } },
-      ]);
+
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.customerId = :customerId', { customerId })
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('order.voucher', 'voucher')
+      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code']);
+
+    const VALID_SORTING_CRITERIA = ['createdAt', 'totalPrice', 'status'];
+    if (VALID_SORTING_CRITERIA.includes(sort)) {
+      queryBuilder.addOrderBy(`order.${sort}`, 'ASC');
+    } else {
+      queryBuilder.orderBy('order.createdAt', 'DESC');
     }
-    return await this.Order.find({ customerId })
-      .sort(sort ? { [sort]: 1 } : { createdAt: -1 })
-      .populate('items.product', 'name price isAvailable featuredImages rating ratingCount');
+
+    return await queryBuilder.getMany();
   }
 
-  public async getOrderById({ orderId, userId, role }: { orderId: string; userId?: string; role?: IUser['role'] }) {
-    const order = await this.Order.findById(orderId).populate('items.product', 'name price isAvailable featuredImages rating ratingCount');
-    if (order.customerId.toString() !== userId.toString() && role === 'User') throw new HttpException(403, errorStatus.NO_PERMISSIONS);
+  public async getOrderById({ orderId, userId, role }: { orderId: string; userId?: string; role?: UserRole }) {
+    const order = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.orderId = :orderId', { orderId })
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('order.voucher', 'voucher')
+      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
+      .getOne();
+
+    if (order.customerId.toString() !== userId.toString() && role === UserRole.User) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
     return order;
   }
 
   public async getAllOrders({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
-    const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.Order.countDocuments(parseFilter).sort(parseSort);
-    const orders = await this.Order.find(parseFilter, null, { limit, skip }).sort(parseSort).populate('items.product voucher');
+    const parseFilter: FilterCriteria = JSON.parse(filter ? filter : '{}');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+    const queryBuilder = this.orderRepository.createQueryBuilder('order');
+
+    Object.entries(parseFilter).forEach(([key, value]) => {
+      if (value !== undefined) {
+        if (key === 'startTime' || key === 'endTime') {
+          const comparator: string = key === 'startTime' ? '>=' : '<=';
+          queryBuilder.andWhere(`order.createdAt ${comparator} :${key}`, {
+            [key]: value,
+          });
+        } else {
+          queryBuilder.andWhere(`order.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+
+    const [orders, total] = await queryBuilder
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('order.voucher', 'voucher')
+      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
+      .orderBy(`order.${Object.keys(parseSort)[0]}`, Object.values(parseSort)[0] as 'ASC' | 'DESC')
+      .getManyAndCount();
+
     return { total, orders };
   }
 
-  public async createOrder(order: Partial<IOrder>) {
+  public async createOrder(order: Partial<Order>) {
     const newOrder = new this.Order(order);
     await newOrder.save();
     return newOrder;
@@ -80,7 +111,7 @@ class OrdersService {
     return this.Order.findByIdAndDelete(orderId);
   }
 
-  public async updateOrder(orderId: string, order: IOrder) {
+  public async updateOrder(orderId: string, order: Order) {
     return await this.Order.findOneAndUpdate({ _id: orderId }, order, { returnOriginal: false });
   }
 
@@ -176,21 +207,21 @@ class OrdersService {
     }
   }
 
-  private async createRevenuesChart({ orders, startDate, columns, timeUnit, format }: CreateChartParams) {
-    const results: ChartData[] = Array.from(Array(columns), (_, i) => ({
-      date: startDate.add(i, timeUnit as any),
-      name: startDate.add(i, timeUnit as any).format(format),
-      totalSales: 0,
-      totalUnits: 0,
-    }));
-    orders.forEach(({ totalPrice, createdAt, items }: any) => {
-      const index = results.findIndex(result => isSame(createdAt, result.date, timeUnit));
-      const totalUnits = items.reduce((partialSum: any, item: any) => partialSum + item.quantity, 0);
-      results[index].totalSales = results[index].totalSales + totalPrice;
-      results[index].totalUnits = results[index].totalUnits + totalUnits;
-    });
-    return results;
-  }
+  // private async createRevenuesChart({ orders, startDate, columns, timeUnit, format }: CreateChartParams) {
+  //   const results: ChartData[] = Array.from(Array(columns), (_, i) => ({
+  //     date: startDate.add(i, timeUnit as any),
+  //     name: startDate.add(i, timeUnit as any).format(format),
+  //     totalSales: 0,
+  //     totalUnits: 0,
+  //   }));
+  //   orders.forEach(({ totalPrice, createdAt, items }: any) => {
+  //     const index = results.findIndex(result => isSame(createdAt, result.date, timeUnit));
+  //     const totalUnits = items.reduce((partialSum: any, item: any) => partialSum + item.quantity, 0);
+  //     results[index].totalSales = results[index].totalSales + totalPrice;
+  //     results[index].totalUnits = results[index].totalUnits + totalUnits;
+  //   });
+  //   return results;
+  // }
 }
 
 export default OrdersService;
