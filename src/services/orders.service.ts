@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { errorStatus } from '@/config';
 import { AppDataSource } from '@/data-source';
-import { Order, OrderStatus, UserRole } from '@/entity';
+import { Order, OrderItem, OrderStatus, Product, UserRole, Voucher, VoucherDiscountType } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { isSame, getNow, getPreviousTimeframe, getStartOfTimeframe, getEndOfTimeframe } from '@/utils/time';
 import type { Dayjs } from 'dayjs';
+import UsersService from './users.service';
 
 // interface CreateChartParams {
 //   orders: (Document<unknown, any, IOrder> &
@@ -36,6 +37,10 @@ interface FilterCriteria {
 
 class OrdersService {
   private orderRepository = AppDataSource.getRepository(Order);
+  private orderItemRepository = AppDataSource.getRepository(OrderItem);
+  private productRepository = AppDataSource.getRepository(Product); //Will be changed to product service
+  private voucherRepository = AppDataSource.getRepository(Voucher); //Will be changed to voucher service
+  private usersService = new UsersService();
 
   public async getOrdersByCustomerId({ customerId, userId, role, sort }: { customerId: string; userId?: string; role?: UserRole; sort?: string }) {
     if (customerId.toString() !== userId.toString() && role === 'User') throw new HttpException(403, errorStatus.NO_PERMISSIONS);
@@ -95,10 +100,61 @@ class OrdersService {
   }
 
   public async createOrder(order: Partial<Order>) {
-    // TODO:
-    // Calculate total price
-    // Create order items
-    // return newOrder;
+    const user = await this.usersService.findUserById(order.customerId);
+    if (!user) throw new HttpException(400, errorStatus.USER_NOT_FOUND);
+
+    const { productWithPrice, totalPrice } = await this.fetchProductPrice(order.items, order.voucherId);
+
+    const newOrder = this.orderRepository.create({
+      customerId: order.customerId,
+      deliveryPhone: order.deliveryPhone,
+      deliveryAddress: order.deliveryAddress,
+      totalPrice: totalPrice,
+      note: order?.note || null,
+      // name: order.name,
+      voucherId: order?.voucherId,
+      status: OrderStatus.Pending,
+    });
+
+    await this.orderRepository.save(newOrder);
+    await Promise.all(
+      productWithPrice.map(async item =>
+        this.orderItemRepository.insert({
+          orderId: newOrder.orderId,
+          ...item,
+        }),
+      ),
+    );
+
+    return newOrder;
+  }
+
+  private async fetchProductPrice(items: { productId: string; quantity: number }[], voucherId?: string) {
+    const getPricePromises = items.map(async item => {
+      const product = await this.productRepository.findOneBy({ productId: item.productId });
+      return {
+        productId: item.productId,
+        quantity: item.quantity,
+        price: product.currentPrice,
+      };
+    });
+
+    const productWithPrice = await Promise.all(getPricePromises);
+    const voucher = await this.voucherRepository.findOneBy({ voucherId });
+
+    // TODO: Verify voucher again
+    const voucherVerified = true;
+
+    let totalPrice = productWithPrice.reduce((total, item) => (total += item.price * item.quantity), 0);
+    if (voucher != null || !voucherVerified) {
+      if (voucher.discountType === VoucherDiscountType.Percent) {
+        totalPrice = Math.ceil((totalPrice * (100 - voucher.discountAmount)) / 100 / 1000) * 1000;
+      } else {
+        totalPrice = Math.ceil((totalPrice - voucher.discountAmount) / 1000) * 1000;
+      }
+    }
+
+    return { productWithPrice, totalPrice };
   }
 
   public async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string, staffId?: string) {

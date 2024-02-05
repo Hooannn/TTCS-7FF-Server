@@ -1,17 +1,5 @@
-import Product, { IProduct } from '../models/Product';
-import { Document, Types, mongo } from 'mongoose';
 import { isSameTimeframe, getNow, getTime } from '@/utils/time';
-interface UpdateParams {
-  product: Document<unknown, any, IProduct> &
-    Omit<
-      IProduct & {
-        _id: Types.ObjectId;
-      },
-      never
-    >;
-  itemQuantity: number;
-  time?: string | number | Date;
-}
+
 class ProductsService {
   private Product = Product;
 
