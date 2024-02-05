@@ -21,12 +21,12 @@ import UsersService from './users.service';
 //   format: string;
 // }
 
-interface ChartData {
-  date: Dayjs;
-  name: string;
-  totalSales: number;
-  totalUnits: number;
-}
+// interface ChartData {
+//   date: Dayjs;
+//   name: string;
+//   totalSales: number;
+//   totalUnits: number;
+// }
 
 interface FilterCriteria {
   customerId?: string;
@@ -42,16 +42,31 @@ class OrdersService {
   private voucherRepository = AppDataSource.getRepository(Voucher); //Will be changed to voucher service
   private usersService = new UsersService();
 
+  private DEFAULT_PAGINATION_SKIP = 0;
+  private DEFAULT_PAGINATION_LIMIT = 8;
+  private FIELDS_TO_SELECT_FOR_ORDERS = [
+    'order',
+    'item.price',
+    'customer.email',
+    'customer.firstName',
+    'customer.lastName',
+    'item.quantity',
+    'product.nameVi',
+    'product.nameEn',
+    'voucher.code',
+  ];
+
   public async getOrdersByCustomerId({ customerId, userId, role, sort }: { customerId: string; userId?: string; role?: UserRole; sort?: string }) {
     if (customerId.toString() !== userId.toString() && role === 'User') throw new HttpException(403, errorStatus.NO_PERMISSIONS);
 
     const queryBuilder = this.orderRepository
       .createQueryBuilder('order')
       .where('order.customerId = :customerId', { customerId })
+      .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.items', 'item')
       .leftJoinAndSelect('item.product', 'product')
       .leftJoinAndSelect('order.voucher', 'voucher')
-      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code']);
+      .select(this.FIELDS_TO_SELECT_FOR_ORDERS);
 
     const VALID_SORTING_CRITERIA = ['createdAt', 'totalPrice', 'status'];
     if (VALID_SORTING_CRITERIA.includes(sort)) {
@@ -64,36 +79,44 @@ class OrdersService {
   }
 
   public async getOrderById({ orderId, userId, role }: { orderId: string; userId?: string; role?: UserRole }) {
-    const order = await this.getDetailedOrderById(orderId);
+    const order = await this.getOrderByIdQueryBuilder(orderId).getOne();
 
-    if (order.customerId.toString() !== userId.toString() && role === UserRole.User) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
+    if (order == null) throw new HttpException(404, errorStatus.ORDER_NOT_FOUND);
+    if (order?.customerId?.toString() !== userId.toString() && role === UserRole.User) throw new HttpException(403, errorStatus.NO_PERMISSIONS);
     return order;
   }
 
   public async getAllOrders({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter: FilterCriteria = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
-    const queryBuilder = this.orderRepository.createQueryBuilder('order');
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.customer', 'customer')
+      .leftJoinAndSelect('order.items', 'item')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('order.voucher', 'voucher');
 
-    Object.entries(parseFilter).forEach(([key, value]) => {
+    const VALID_FILTER_CRITERIA = ['customerId', 'deliveryPhone', 'deliveryAddress', 'status', 'voucherId', 'staffId'];
+    Object.entries(parseFilter).forEach(([criteria, value]) => {
       if (value !== undefined) {
-        if (key === 'startTime' || key === 'endTime') {
-          const comparator: string = key === 'startTime' ? '>=' : '<=';
-          queryBuilder.andWhere(`order.createdAt ${comparator} :${key}`, {
-            [key]: value,
+        if (criteria === 'startTime' || criteria === 'endTime') {
+          const comparator: string = criteria === 'startTime' ? '>=' : '<=';
+          queryBuilder.andWhere(`order.createdAt ${comparator} :${criteria}`, {
+            [criteria]: value,
           });
-        } else {
-          queryBuilder.andWhere(`order.${key} = :${key}`, { [key]: value });
+        } else if (criteria === 'customerEmail') {
+          queryBuilder.andWhere('customer.email = :customerEmail', { customerEmail: value });
+        } else if (VALID_FILTER_CRITERIA.includes(criteria)) {
+          queryBuilder.andWhere(`order.${criteria} = :${criteria}`, { [criteria]: value });
         }
       }
     });
 
     const [orders, total] = await queryBuilder
-      .leftJoinAndSelect('order.items', 'item')
-      .leftJoinAndSelect('item.product', 'product')
-      .leftJoinAndSelect('order.voucher', 'voucher')
-      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
+      .select(this.FIELDS_TO_SELECT_FOR_ORDERS)
       .orderBy(`order.${Object.keys(parseSort)[0]}`, Object.values(parseSort)[0] as 'ASC' | 'DESC')
+      .skip(skip || this.DEFAULT_PAGINATION_SKIP)
+      .take(limit || this.DEFAULT_PAGINATION_LIMIT)
       .getManyAndCount();
 
     return { total, orders };
@@ -111,7 +134,7 @@ class OrdersService {
       deliveryAddress: order.deliveryAddress,
       totalPrice: totalPrice,
       note: order?.note || null,
-      // name: order.name,
+      name: order.name,
       voucherId: order?.voucherId,
       status: OrderStatus.Pending,
     });
@@ -127,6 +150,21 @@ class OrdersService {
     );
 
     return newOrder;
+  }
+
+  public async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string, staffId?: string) {
+    if (status === 'Rejected' && !rejectionReason) throw new HttpException(404, errorStatus.MISSING_REJECTION_REASON);
+    const updateResult = await this.orderRepository.update(
+      { orderId },
+      {
+        status,
+        rejectionReason: status === 'Rejected' ? rejectionReason : null,
+        staffId,
+      },
+    );
+
+    if (updateResult.affected !== 1) throw new HttpException(404, errorStatus.UPDATE_STATUS_FAILED);
+    return await this.getOrderByIdQueryBuilder(orderId).getOne();
   }
 
   private async fetchProductPrice(items: { productId: string; quantity: number }[], voucherId?: string) {
@@ -157,101 +195,85 @@ class OrdersService {
     return { productWithPrice, totalPrice };
   }
 
-  public async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string, staffId?: string) {
-    if (status === 'Rejected' && !rejectionReason) throw new HttpException(404, errorStatus.MISSING_REJECTION_REASON);
-    const updateResult = await this.orderRepository.update(
-      { orderId },
-      {
-        status,
-        rejectionReason: status === 'Rejected' ? rejectionReason : null,
-        staffId,
-      },
-    );
-
-    if (updateResult.affected !== 1) throw new HttpException(404, errorStatus.UPDATE_STATUS_FAILED);
-    return await this.getDetailedOrderById(orderId);
-  }
-
-  private async getDetailedOrderById(orderId: string) {
-    // Simple find-relation cannot return nested INNER JOIN
-    return await this.orderRepository
+  private getOrderByIdQueryBuilder(orderId: string) {
+    return this.orderRepository
       .createQueryBuilder('order')
       .where('order.orderId = :orderId', { orderId })
+      .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.items', 'item')
       .leftJoinAndSelect('item.product', 'product')
       .leftJoinAndSelect('order.voucher', 'voucher')
-      .select(['order', 'item.price', 'item.quantity', 'product.nameVi', 'product.nameEn', 'voucher.code'])
-      .getOne();
+      .select(this.FIELDS_TO_SELECT_FOR_ORDERS);
   }
 
-  public async getSummaryOrders(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
-    const currentCount = await this.Order.countDocuments({
-      createdAt: { $gte: startDate, $lte: to },
-    });
-    const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
-    const previousCount = await this.Order.countDocuments({
-      createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
-    });
-    return { currentCount, previousCount };
-  }
+  // public async getSummaryOrders(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+  //   const currentCount = await this.Order.countDocuments({
+  //     createdAt: { $gte: startDate, $lte: to },
+  //   });
+  //   const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
+  //   const previousCount = await this.Order.countDocuments({
+  //     createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
+  //   });
+  //   return { currentCount, previousCount };
+  // }
 
-  public async getSummaryRevenues(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-    const currentOrders = await this.Order.find({
-      createdAt: { $gte: startDate.valueOf(), $lte: to },
-      status: 'Done',
-    });
-    const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
-    const previousOrders = await this.Order.find({
-      createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
-      status: 'Done',
-    });
-    const currentCount = currentOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
-    const previousCount = previousOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
-    // const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
-    // const details = await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
-    return { currentCount, previousCount /*, details  */ };
-  }
+  // public async getSummaryRevenues(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type);
+  //   const currentOrders = await this.Order.find({
+  //     createdAt: { $gte: startDate.valueOf(), $lte: to },
+  //     status: 'Done',
+  //   });
+  //   const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
+  //   const previousOrders = await this.Order.find({
+  //     createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
+  //     status: 'Done',
+  //   });
+  //   const currentCount = currentOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
+  //   const previousCount = previousOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
+  //   // const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
+  //   // const details = await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
+  //   return { currentCount, previousCount /*, details  */ };
+  // }
 
-  public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-    const currentOrders = await this.Order.find({
-      createdAt: { $gte: startDate.valueOf(), $lte: getNow().valueOf() },
-      status: 'Done',
-    });
-    const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
-    return await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
-  }
+  // public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type);
+  //   const currentOrders = await this.Order.find({
+  //     createdAt: { $gte: startDate.valueOf(), $lte: getNow().valueOf() },
+  //     status: 'Done',
+  //   });
+  //   const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
+  //   return await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
+  // }
 
-  private prepareCreateChartParams(type: 'daily' | 'weekly' | 'monthly' | 'yearly', startDate: Dayjs) {
-    switch (type) {
-      case 'daily':
-        return {
-          columns: 24,
-          timeUnit: 'hour',
-          format: 'hh:mm',
-        };
-      case 'weekly':
-        return {
-          columns: 7,
-          timeUnit: 'day',
-          format: 'dddd DD-MM',
-        };
-      case 'monthly':
-        return {
-          columns: startDate.daysInMonth(),
-          timeUnit: 'day',
-          format: 'dddd DD-MM',
-        };
-      case 'yearly':
-        return {
-          columns: 12,
-          timeUnit: 'month',
-          format: 'MMMM',
-        };
-    }
-  }
+  // private prepareCreateChartParams(type: 'daily' | 'weekly' | 'monthly' | 'yearly', startDate: Dayjs) {
+  //   switch (type) {
+  //     case 'daily':
+  //       return {
+  //         columns: 24,
+  //         timeUnit: 'hour',
+  //         format: 'hh:mm',
+  //       };
+  //     case 'weekly':
+  //       return {
+  //         columns: 7,
+  //         timeUnit: 'day',
+  //         format: 'dddd DD-MM',
+  //       };
+  //     case 'monthly':
+  //       return {
+  //         columns: startDate.daysInMonth(),
+  //         timeUnit: 'day',
+  //         format: 'dddd DD-MM',
+  //       };
+  //     case 'yearly':
+  //       return {
+  //         columns: 12,
+  //         timeUnit: 'month',
+  //         format: 'MMMM',
+  //       };
+  //   }
+  // }
 
   // private async createRevenuesChart({ orders, startDate, columns, timeUnit, format }: CreateChartParams) {
   //   const results: ChartData[] = Array.from(Array(columns), (_, i) => ({

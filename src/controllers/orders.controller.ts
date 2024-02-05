@@ -71,19 +71,19 @@ class OrdersController {
 
   public checkoutThenCreateOrder = async (req: RequestWithUser, res: Response, next: NextFunction) => {
     try {
-      // const OPEN_HOUR = 7;
-      // const CLOSE_HOUR = 22;
+      const OPEN_HOUR = 7;
+      const CLOSE_HOUR = 22;
 
-      // const errors = validationResult(req);
-      // if (!errors.isEmpty()) {
-      //   return res.status(400).json({ errors: errors.array() });
-      // }
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
-      // const now = getNow();
-      // const checkoutHour = now.hour();
-      // const checkoutMinute = now.minute();
-      // if (checkoutHour < OPEN_HOUR || checkoutHour > CLOSE_HOUR || (checkoutHour === CLOSE_HOUR && checkoutMinute > 0))
-      //   throw new HttpException(400, errorStatus.INVALID_CHECKOUT_TIME);
+      const now = getNow();
+      const checkoutHour = now.hour();
+      const checkoutMinute = now.minute();
+      if (checkoutHour < OPEN_HOUR || checkoutHour > CLOSE_HOUR || (checkoutHour === CLOSE_HOUR && checkoutMinute > 0))
+        throw new HttpException(400, errorStatus.INVALID_CHECKOUT_TIME);
 
       const { deliveryAddress, deliveryPhone, items, note, voucherId } = req.body;
       const { userId } = req.auth;
@@ -97,8 +97,6 @@ class OrdersController {
         items,
         note,
       });
-
-      return res.status(201).json({ code: 201, success: true, data: order, message: successStatus.CREATE_SUCCESSFULLY });
 
       const { email: customerEmail, userId: customerId, firstName } = await this.usersService.findUserById(userId);
       await this.usersService.resetCartItems(customerId);
