@@ -17,6 +17,9 @@ export class Order {
   @CreateDateColumn()
   createdAt: Date;
 
+  @Column()
+  name: string;
+
   @Column({ type: 'text' })
   deliveryAddress: string;
 
