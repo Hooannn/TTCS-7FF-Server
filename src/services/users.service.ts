@@ -130,7 +130,20 @@ class UsersService {
   }
 
   public async getCartItems(userId: string) {
-    return await this.cartItemRepository.find({ where: { userId, status: CartItemStatus.Active }, relations: ['product'] });
+    return (
+      await this.cartItemRepository.find({
+        where: { userId, status: CartItemStatus.Active, product: { isActive: 1, isAvailable: 1 } },
+        relations: ['product'],
+      })
+    ).map(item => ({
+      ...item,
+      product: {
+        ...item.product,
+        price: item.product.currentPrice,
+        name: { vi: item.product.nameVi, en: item.product.nameEn },
+        description: { vi: item.product.descriptionVi, en: item.product.descriptionEn },
+      },
+    }));
   }
 
   public async addCartItem({ userId, product, quantity }: { userId: string; product: string; quantity: number }) {
@@ -139,7 +152,7 @@ class UsersService {
       cartItem.quantity += quantity;
       await this.cartItemRepository.save(cartItem);
     } else {
-      const newCartItem = this.cartItemRepository.create({ userId, productId: product, quantity });
+      const newCartItem = this.cartItemRepository.create({ userId, productId: product, quantity, status: CartItemStatus.Active });
       await this.cartItemRepository.save(newCartItem);
     }
   }
