@@ -31,6 +31,9 @@ export class Product {
   @Column({ type: 'bit', default: () => `b'1'` })
   isActive: number;
 
+  @Column()
+  categoryId: string;
+
   @ManyToOne(() => Category)
   @JoinColumn({ name: 'categoryId' })
   category: Category;

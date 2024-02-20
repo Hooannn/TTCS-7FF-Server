@@ -1,7 +1,14 @@
 import { isSameTimeframe, getNow, getTime } from '@/utils/time';
+import { AppDataSource } from '@/data-source';
+import { DataSource, FindManyOptions } from 'typeorm';
+import { Category, Product, ProductImage } from '@/entity';
+import { HttpException } from '@/exceptions/HttpException';
+import { errorStatus } from '@/config';
 
 class ProductsService {
-  private Product = Product;
+  private productRepository = AppDataSource.getRepository(Product);
+  private categoryRepository = AppDataSource.getRepository(Category);
+  private productImagesRepository = AppDataSource.getRepository(ProductImage);
 
   public async resetProductsDailyData() {
     const productsToReset = await this.Product.find({
@@ -25,8 +32,8 @@ class ProductsService {
     }
   }
 
-  public async getProductById(productId: string) {
-    const product = await this.Product.findById(productId).populate('category');
+  public async getProductById(id: string) {
+    const product = await this.productRepository.findOneBy({productId: id, isActive: 1});
     this.updateViewCount(product, 'daily');
     this.updateViewCount(product, 'monthly');
     this.updateViewCount(product, 'weekly');
@@ -59,8 +66,8 @@ class ProductsService {
     return { totalPrice, failedProducts };
   }
 
-  public async findOneProductByCategory(categoryId: string) {
-    return await this.Product.findOne({ category: categoryId });
+  public async findOneProductByCategory(id: string) {
+    return await this.productRepository.find({relations: ['category'], where: {categoryId: id}})
   }
 
   public async updateProductSales(items: { product: string | Types.ObjectId; quantity: number }[], orderCreatedAt?: number | string | Date) {
@@ -94,61 +101,58 @@ class ProductsService {
   public async getAllProducts({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.Product.countDocuments(parseFilter).sort(parseSort);
-    const products = await this.Product.find(parseFilter, null, { limit, skip }).sort(parseSort).populate('category');
+    const total = await this.productRepository.count({where: {isActive: 1}});
+    const findOptions: FindManyOptions<Product> = {
+      relations: ['images'],
+      where: parseFilter,
+      order: parseSort,
+      skip,
+      take: limit,
+      select: ['productId', 'nameVi','nameEn', 'category', 'images', 'descriptionVi','descriptionEn', 'isAvailable','isActive','currentPrice','createdAt']
+    };
+    if (!skip) delete findOptions.skip;
+    if (!limit) delete findOptions.take;
+    const products = await this.productRepository.find(findOptions);
     return { total, products };
   }
 
   public async searchProducts({ q }: { q: string }) {
     const parseSearchTerm = JSON.parse(q);
-    const products = await this.Product.find({
-      $or: [
-        {
-          'name.vi': parseSearchTerm,
-        },
-        {
-          'name.en': parseSearchTerm,
-        },
-      ],
-      isAvailable: true,
-    })
-      .sort({ createdAt: -1 })
-      .populate({
-        path: 'category',
-        select: 'name',
-      });
-
+    const findOptions: FindManyOptions<Product> = {
+      where: [{nameEn: parseSearchTerm, isActive: 1}, {nameVi: parseSearchTerm, isActive: 1}]
+    }
+    const products = await this.productRepository.find(findOptions);
     return { products };
   }
 
-  public async addProduct(reqProduct: IProduct) {
-    const product = new this.Product(reqProduct);
-    await product.save();
+  public async addProduct(reqProduct: Partial<Product>) {
+    const {nameEn, nameVi, descriptionEn, descriptionVi, categoryId, featuredImages, currentPrice} = reqProduct
+    const product = this.productRepository.create({
+      nameEn,
+      nameVi,
+      descriptionEn,
+      descriptionVi,
+      categoryId,
+      currentPrice
+    }); 
+    const images = featuredImages.map((image) => (this.productImagesRepository.create({imageUrl: image})))
+    await this.productImagesRepository.save(images);
+    product.images = images;
+    await this.productRepository.save(product);
     return product;
   }
 
   public async deleteProduct(productId: string) {
-    return this.Product.findByIdAndDelete(productId);
+    return this.productRepository.update(productId, {isActive: 0});
   }
 
-  public async updateProduct(productId: string, product: IProduct) {
-    return await this.Product.findOneAndUpdate({ _id: productId }, product, { returnOriginal: false });
-  }
-
-  private async updateYearlySales({ product, itemQuantity, time }: UpdateParams) {
-    const date = time ? new Date(time) : new Date();
-    const year = date.getFullYear().toString();
-    const yearlyDataIndex = product.yearlyData.findIndex(data => data.year === year);
-    if (yearlyDataIndex !== -1) {
-      await product.updateOne(
-        { $inc: { 'yearlyData.$[elem].totalSales': product.price * itemQuantity, 'yearlyData.$[elem].totalUnits': itemQuantity } },
-        { arrayFilters: [{ 'elem.year': year }] },
-      );
-    } else {
-      await product.updateOne({
-        $push: { yearlyData: { year, totalSales: product.price * itemQuantity, totalUnits: itemQuantity } },
-      });
-    }
+  public async updateProduct(productId: string, reqProduct: Partial<Product>) {
+    const product = await this.productRepository.findOneBy({productId, isActive: 1});
+    if (!product) throw new HttpException(400, errorStatus.PRODUCT_NOT_FOUND);
+    const images = reqProduct.featuredImages?.map((image) => (this.productImagesRepository.create({imageUrl: image})))
+    await this.productImagesRepository.save(images);
+    product.images = images;
+    return await this.productRepository.save(product);
   }
 
   private async updateMonthlySales({ product, itemQuantity, time }: UpdateParams) {
