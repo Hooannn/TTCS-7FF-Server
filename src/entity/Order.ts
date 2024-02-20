@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { User } from './User';
 import { Voucher } from './Voucher';
+import { OrderItem } from './OrderItem';
 
 @Entity({ name: 'ORDER' })
 export class Order {
@@ -15,6 +16,9 @@ export class Order {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @Column()
+  name: string;
 
   @Column({ type: 'text' })
   deliveryAddress: string;
@@ -51,11 +55,14 @@ export class Order {
   @ManyToOne(() => User)
   @JoinColumn({ name: 'staffId' })
   staff: User;
+
+  @OneToMany(() => OrderItem, item => item.order)
+  items: OrderItem[];
 }
 
 export enum OrderStatus {
   Pending = 'Pending',
   Processing = 'Processing',
-  Rejected = 'Rejected',
   Done = 'Done',
+  Rejected = 'Rejected',
 }

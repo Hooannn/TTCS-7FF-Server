@@ -16,4 +16,5 @@ export const AppDataSource = new DataSource({
   entities: [User, Order, OrderItem, CartItem, Category, Product, ProductImage, Voucher],
   migrations: [],
   subscribers: [],
+  timezone: 'z',
 });
