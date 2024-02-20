@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 class CategoriesController {
   private categoriesService = new CategoriesService();
   private productsService = new ProductsService();
+
   public getAllCategories = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { skip, limit, filter, sort } = req.query;
@@ -23,8 +24,8 @@ class CategoriesController {
 
   public addCategory = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, description } = req.body;
-      const category = await this.categoriesService.addCategory({ name, description });
+      const reqProduct = req.body;
+      const category = await this.categoriesService.addCategory(reqProduct);
       res.status(201).json({ code: 201, success: true, data: category, message: successStatus.CREATE_SUCCESSFULLY });
     } catch (error) {
       next(error);

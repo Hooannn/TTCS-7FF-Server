@@ -17,12 +17,12 @@ const app = new App([
   new AuthRoute(),
   new UsersRoute(),
   new FilesRoute(),
-  /* Turn some route on after successfully migrated its service
   new ProductsRoute(),
+  new CategoriesRoute(),
   new VouchersRoute(),
+  /* Turn some route on after successfully migrated its service
   new OrdersRoute(),
   new StatisticsRoute(),
-  new CategoriesRoute(),
   */
 ]);
 
