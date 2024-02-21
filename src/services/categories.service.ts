@@ -5,9 +5,9 @@ import { DataSource, FindManyOptions } from 'typeorm';
 import { AppDataSource } from '@/data-source';
 
 interface CreateCategoryReq {
-  nameVi: string,
-  nameEn: string,
-  icon?: string
+  nameVi: string;
+  nameEn: string;
+  icon?: string;
 }
 class CategoriesService {
   private categoryRepository = AppDataSource.getRepository(Category);
@@ -15,7 +15,7 @@ class CategoriesService {
   public async getAllCategories({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.categoryRepository.count({select: ['categoryId'], where: parseFilter, order: parseSort});
+    const total = await this.categoryRepository.count({ select: ['categoryId'], where: parseFilter, order: parseSort });
     const findOptions: FindManyOptions<Category> = {
       where: parseFilter,
       order: parseSort,
@@ -26,12 +26,12 @@ class CategoriesService {
     if (!skip) delete findOptions.skip;
     if (!limit) delete findOptions.take;
     const categories = await this.categoryRepository.find(findOptions);
-    return { total, categories };
+    return { total, categories: categories.map(category => ({ ...category, name: { vi: category.nameVi, en: category.nameEn } })) };
   }
 
-  public async addCategory(reqCategory: Partial<Category>){
+  public async addCategory(reqCategory: Partial<Category>) {
     const { nameVi, nameEn, icon } = reqCategory;
-    const existedCategory = await this.categoryRepository.existsBy({ nameVi, nameEn, isActive: 1 })
+    const existedCategory = await this.categoryRepository.existsBy({ nameVi, nameEn, isActive: 1 });
     if (existedCategory) throw new HttpException(409, errorStatus.CATEGORY_DUPLICATE_NAME);
     const category = this.categoryRepository.create({
       nameVi,
@@ -43,14 +43,14 @@ class CategoriesService {
   }
 
   public async deleteCategory(categoryId: string) {
-    return this.categoryRepository.update(categoryId, {isActive: 0})
+    return this.categoryRepository.update(categoryId, { isActive: 0 });
   }
 
   public async updateCategory(categoryId: string, category: Partial<Category>) {
     const { nameVi, nameEn, icon } = category;
-    const duplicatedCategory = await this.categoryRepository.existsBy({nameVi, nameEn, isActive: 1});
+    const duplicatedCategory = await this.categoryRepository.existsBy({ nameVi, nameEn, isActive: 1 });
     if (duplicatedCategory) throw new HttpException(409, errorStatus.CATEGORY_DUPLICATE_NAME);
-    const updatedCategory = {nameVi, nameEn, icon};
+    const updatedCategory = { nameVi, nameEn, icon };
     return await this.categoryRepository.update(categoryId, updatedCategory);
   }
 }
