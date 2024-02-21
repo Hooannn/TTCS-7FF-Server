@@ -23,6 +23,7 @@ class ProductsService {
       ...product,
       price: product.currentPrice,
       _id: product.productId,
+      isAvailable: product.isAvailable?.readUInt8(0) === 1,
       featuredImages: product.images.map(i => i.imageUrl),
       name: { vi: product.nameVi, en: product.nameEn },
       description: { vi: product.descriptionVi, en: product.descriptionEn },
@@ -38,24 +39,8 @@ class ProductsService {
     return { highestViewCountProducts, highestTotalSoldUnitsProducts, highestTotalSalesProducts };
   }
 
-  public async getProductsPrice(items: { product: string | Types.ObjectId; quantity: number }[]) {
-    const productIds = items.map(item => new mongo.ObjectId(item.product));
-    const failedProducts = [];
-    let totalPrice = 0;
-    const products = await this.Product.find({ _id: { $in: productIds } });
-    for (let index = 0; index < products.length; index++) {
-      const itemQuantity = items.find(item => item.product.toString() === products[index]._id.toString()).quantity;
-      if (itemQuantity <= products[index].stocks && products[index].isAvailable) {
-        totalPrice += products[index].price * itemQuantity;
-        await products[index].updateOne({ $inc: { stocks: -itemQuantity } });
-        products[index].save();
-      } else failedProducts.push(products[index]._id.toString());
-    }
-    return { totalPrice, failedProducts };
-  }
-
   public async findOneProductByCategory(id: string) {
-    return await this.productRepository.find({ relations: ['category'], where: { categoryId: id } });
+    return await this.productRepository.findOne({ relations: ['category'], where: { categoryId: id, isActive: 1 } });
   }
 
   public async updateProductSales(items: { product: string | Types.ObjectId; quantity: number }[], orderCreatedAt?: number | string | Date) {
@@ -69,10 +54,10 @@ class ProductsService {
   public async getAllProducts({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.productRepository.count({ where: { isActive: 1 } });
+    const total = await this.productRepository.count({ where: { ...parseFilter, isActive: 1 } });
     const findOptions: FindManyOptions<Product> = {
-      relations: ['images'],
-      where: parseFilter,
+      relations: ['images', 'category'],
+      where: { ...parseFilter, isActive: 1 },
       order: parseSort,
       skip,
       take: limit,
@@ -93,12 +78,14 @@ class ProductsService {
     if (!skip) delete findOptions.skip;
     if (!limit) delete findOptions.take;
     const products = await this.productRepository.find(findOptions);
+
     return {
       total,
       products: products.map(product => ({
         ...product,
         price: product.currentPrice,
         _id: product.productId,
+        isAvailable: product.isAvailable?.readUInt8(0) === 1,
         featuredImages: product.images.map(i => i.imageUrl),
         name: { vi: product.nameVi, en: product.nameEn },
         description: { vi: product.descriptionVi, en: product.descriptionEn },
@@ -120,6 +107,7 @@ class ProductsService {
         ...product,
         price: product.currentPrice,
         _id: product.productId,
+        isAvailable: product.isAvailable?.readUInt8(0) === 1,
         featuredImages: product.images.map(i => i.imageUrl),
         name: { vi: product.nameVi, en: product.nameEn },
         description: { vi: product.descriptionVi, en: product.descriptionEn },
@@ -128,7 +116,7 @@ class ProductsService {
   }
 
   public async addProduct(reqProduct: Partial<Product>) {
-    const { nameEn, nameVi, descriptionEn, descriptionVi, categoryId, featuredImages, currentPrice } = reqProduct;
+    const { nameEn, nameVi, descriptionEn, descriptionVi, categoryId, featuredImages, currentPrice, isAvailable } = reqProduct;
     const product = this.productRepository.create({
       nameEn,
       nameVi,
@@ -136,6 +124,7 @@ class ProductsService {
       descriptionVi,
       categoryId,
       currentPrice,
+      isAvailable: isAvailable ? 1 : 0,
     });
     const images = featuredImages.map(image => this.productImagesRepository.create({ imageUrl: image }));
     await this.productImagesRepository.save(images);
@@ -154,6 +143,13 @@ class ProductsService {
     const images = reqProduct.featuredImages?.map(image => this.productImagesRepository.create({ imageUrl: image }));
     await this.productImagesRepository.save(images);
     product.images = images;
+    product.nameEn = reqProduct.nameEn;
+    product.nameVi = reqProduct.nameVi;
+    product.descriptionEn = reqProduct.descriptionEn;
+    product.descriptionVi = reqProduct.descriptionVi;
+    product.categoryId = reqProduct.categoryId;
+    product.currentPrice = reqProduct.currentPrice;
+    product.isAvailable = reqProduct.isAvailable;
     return await this.productRepository.save(product);
   }
 

@@ -31,7 +31,15 @@ class App {
   public async start() {
     try {
       await this.connectToDatabase();
+    } catch (error) {
+      logger.error(`❌ Error while connect to database \n${JSON.stringify(error)}`);
+    }
+    try {
       await this.connectToRedis();
+    } catch (error) {
+      logger.error(`❌ Error while connect to redis \n${JSON.stringify(error)}`);
+    }
+    try {
       this.listen();
     } catch (error) {
       logger.error(`❌ Error while start app\n${JSON.stringify(error)}`);

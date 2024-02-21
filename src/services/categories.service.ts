@@ -15,9 +15,9 @@ class CategoriesService {
   public async getAllCategories({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.categoryRepository.count({ select: ['categoryId'], where: parseFilter, order: parseSort });
+    const total = await this.categoryRepository.count({ select: ['categoryId'], where: { ...parseFilter, isActive: 1 }, order: parseSort });
     const findOptions: FindManyOptions<Category> = {
-      where: parseFilter,
+      where: { ...parseFilter, isActive: 1 },
       order: parseSort,
       skip,
       take: limit,
@@ -26,7 +26,10 @@ class CategoriesService {
     if (!skip) delete findOptions.skip;
     if (!limit) delete findOptions.take;
     const categories = await this.categoryRepository.find(findOptions);
-    return { total, categories: categories.map(category => ({ ...category, name: { vi: category.nameVi, en: category.nameEn } })) };
+    return {
+      total,
+      categories: categories.map(category => ({ ...category, _id: category.categoryId, name: { vi: category.nameVi, en: category.nameEn } })),
+    };
   }
 
   public async addCategory(reqCategory: Partial<Category>) {

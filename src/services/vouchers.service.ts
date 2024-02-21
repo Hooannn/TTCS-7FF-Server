@@ -1,6 +1,6 @@
 import { errorStatus } from '@/config';
 import { AppDataSource } from '@/data-source';
-import { DataSource, FindManyOptions, MoreThan, MoreThanOrEqual } from 'typeorm';
+import { DataSource, FindManyOptions, MoreThan, MoreThanOrEqual, Not } from 'typeorm';
 import { Voucher, Order } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { getNow } from '@/utils/time';
@@ -12,23 +12,23 @@ class VouchersService {
   public async getAllVouchers({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
-    const total = await this.voucherRepository.count({where: {isActive: 1}});
+    const total = await this.voucherRepository.count({ where: { ...parseFilter, isActive: 1 } });
     const findOptions: FindManyOptions<Voucher> = {
-      where: parseFilter,
+      where: { ...parseFilter, isActive: 1 },
       order: parseSort,
       skip,
       take: limit,
-      select: ['voucherId', 'code', 'discountType', 'discountAmount', 'expiredDate', 'totalUsageLimit','createdAt','isActive']
+      select: ['voucherId', 'code', 'discountType', 'discountAmount', 'expiredDate', 'totalUsageLimit', 'createdAt', 'isActive'],
     };
     if (!skip) delete findOptions.skip;
     if (!limit) delete findOptions.take;
     const vouchers = await this.voucherRepository.find(findOptions);
-    return { total, vouchers };
+    return { total, vouchers: vouchers.map(v => ({ ...v, _id: v.voucherId })) };
   }
 
   public async addVoucher(reqVoucher: Partial<Voucher>) {
-    const { code, discountType, discountAmount, totalUsageLimit} = reqVoucher;
-    const isVoucherExisted = await this.voucherRepository.findOneBy({code, isActive: 1});
+    const { code, discountType, discountAmount, totalUsageLimit, expiredDate } = reqVoucher;
+    const isVoucherExisted = await this.voucherRepository.findOneBy({ code, isActive: 1 });
     if (isVoucherExisted) throw new HttpException(409, errorStatus.VOUCHER_EXISTED);
     if (reqVoucher.discountAmount <= 0 || (reqVoucher.discountType === 'Percent' && reqVoucher.discountAmount > 100)) {
       throw new HttpException(400, errorStatus.INVALID_VOUCHER_AMOUNT);
@@ -37,24 +37,25 @@ class VouchersService {
       code,
       discountType,
       discountAmount,
-      totalUsageLimit
+      totalUsageLimit,
+      expiredDate: expiredDate ? new Date(expiredDate) : null,
     });
     await this.voucherRepository.save(voucher);
     return voucher;
   }
 
   public async deleteVoucher(voucherId: string) {
-    return this.voucherRepository.update(voucherId, {isActive: 0});
+    return this.voucherRepository.update(voucherId, { isActive: 0 });
   }
 
   public async updateVoucher(voucherId: string, voucher: Partial<Voucher>) {
-    const { code, discountType, discountAmount} = voucher;
-    const duplicatedVoucher = await this.voucherRepository.existsBy({code, isActive: 1})
+    const { code, discountType, discountAmount, expiredDate } = voucher;
+    const duplicatedVoucher = await this.voucherRepository.existsBy({ code, isActive: 1, voucherId: Not(voucherId) });
     if (duplicatedVoucher) throw new HttpException(409, errorStatus.VOUCHER_EXISTED);
-    if (voucher.discountAmount <= 0 || (voucher.discountType === 'Percent' && voucher.discountAmount > 100)) {
+    if (discountAmount <= 0 || (discountType === 'Percent' && discountAmount > 100)) {
       throw new HttpException(400, errorStatus.INVALID_VOUCHER_AMOUNT);
     }
-    return await this.voucherRepository.update(voucherId, voucher)
+    return await this.voucherRepository.update(voucherId, { ...voucher, expiredDate: expiredDate ? new Date(expiredDate) : null });
   }
 
   public async checkVoucherByCode(code: string, userId: string) {
@@ -64,9 +65,11 @@ class VouchersService {
     });
     if (!voucher) throw new HttpException(400, errorStatus.VOUCHER_NOT_FOUND);
     if (voucher.expiredDate) {
-      if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);}
-    if (this.orderRepository.existsBy({customerId: userId, voucherId: voucher.voucherId})) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
-    return voucher;
+      if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);
+    }
+    if (this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId }))
+      throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
+    return { ...voucher, _id: voucher.voucherId };
   }
 }
 export default VouchersService;
