@@ -1,6 +1,6 @@
 import { isSameTimeframe, getNow, getTime } from '@/utils/time';
 import { AppDataSource } from '@/data-source';
-import { DataSource, FindManyOptions } from 'typeorm';
+import { DataSource, FindManyOptions, Like } from 'typeorm';
 import { Category, Product, ProductImage } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@/config';
@@ -15,12 +15,15 @@ class ProductsService {
   }
 
   public async getProductById(id: string) {
-    const product = await this.productRepository.findOneBy({ productId: id, isActive: 1 });
+    const product = await this.productRepository.findOne({
+      where: { productId: id, isActive: 1 },
+      relations: ['images'],
+    });
     return {
       ...product,
       price: product.currentPrice,
       _id: product.productId,
-      featuredImages: product.images?.map(i => i.imageUrl),
+      featuredImages: product.images.map(i => i.imageUrl),
       name: { vi: product.nameVi, en: product.nameEn },
       description: { vi: product.descriptionVi, en: product.descriptionEn },
     };
@@ -104,15 +107,24 @@ class ProductsService {
   }
 
   public async searchProducts({ q }: { q: string }) {
-    const parseSearchTerm = JSON.parse(q);
     const findOptions: FindManyOptions<Product> = {
+      relations: ['images'],
       where: [
-        { nameEn: parseSearchTerm, isActive: 1 },
-        { nameVi: parseSearchTerm, isActive: 1 },
+        { nameEn: Like(`%${q}%`), isActive: 1 },
+        { nameVi: Like(`%${q}%`), isActive: 1 },
       ],
     };
     const products = await this.productRepository.find(findOptions);
-    return { products };
+    return {
+      products: products.map(product => ({
+        ...product,
+        price: product.currentPrice,
+        _id: product.productId,
+        featuredImages: product.images.map(i => i.imageUrl),
+        name: { vi: product.nameVi, en: product.nameEn },
+        description: { vi: product.descriptionVi, en: product.descriptionEn },
+      })),
+    };
   }
 
   public async addProduct(reqProduct: Partial<Product>) {

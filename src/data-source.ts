@@ -12,7 +12,7 @@ export const AppDataSource = new DataSource({
   // Just turn synchronize on when need create tables or update tables when entity changed.
   // Then turn off when dev
   synchronize: false,
-  logging: false,
+  logging: true,
   entities: [User, Order, OrderItem, CartItem, Category, Product, ProductImage, Voucher],
   migrations: [],
   subscribers: [],
