@@ -5,6 +5,7 @@ class StatisticsService {
   private productsService = new ProductsService();
   private usersService = new UsersService();
   private ordersService = new OrdersService();
+
   public async getStatistics(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
     const [users, orders, revenues] = await Promise.all([
       await this.usersService.getSummaryUsers(to, type),
@@ -28,7 +29,8 @@ class StatisticsService {
   }
 
   public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    return this.ordersService.getRevenuesChart(type);
+    // return this.ordersService.getRevenuesChart(type);
+    return null;
   }
 }
 

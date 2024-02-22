@@ -85,7 +85,7 @@ class OrdersController {
       if (checkoutHour < OPEN_HOUR || checkoutHour > CLOSE_HOUR || (checkoutHour === CLOSE_HOUR && checkoutMinute > 0))
         throw new HttpException(400, errorStatus.INVALID_CHECKOUT_TIME);
 
-      const { deliveryAddress, deliveryPhone, items, note, voucherId } = req.body;
+      const { deliveryAddress, deliveryPhone, items, note, voucherId, name } = req.body;
       const { userId } = req.auth;
       const { locale } = req.query;
 
@@ -96,6 +96,7 @@ class OrdersController {
         deliveryPhone,
         items,
         note,
+        name,
       });
 
       const { email: customerEmail, userId: customerId, firstName } = await this.usersService.findUserById(userId);

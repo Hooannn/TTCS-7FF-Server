@@ -20,10 +20,10 @@ const app = new App([
   new ProductsRoute(),
   new CategoriesRoute(),
   new VouchersRoute(),
-  /* Turn some route on after successfully migrated its service
-  new OrdersRoute(),
   new StatisticsRoute(),
-  */
+  new OrdersRoute(),
+  /* Turn some route on after successfully migrated its service
+   */
 ]);
 
 app.start();
