@@ -18,7 +18,7 @@ class OrdersRoute implements Routes {
     this.router.get(`${this.path}`, adminMiddleware, this.ordersController.getAllOrders);
     this.router.get(`${this.path}/:orderId`, authMiddleware, this.ordersController.getOrderById);
     this.router.get(`/my-orders/:customerId`, authMiddleware, this.ordersController.getOrdersByCustomerId);
-    this.router.post(`/checkout`, authMiddleware, checkoutValidator(), this.ordersController.checkoutThenCreateOrder);
+    this.router.post(`/checkout`, authMiddleware, /*checkoutValidator(),*/ this.ordersController.checkoutThenCreateOrder);
     this.router.patch(`${this.path}`, adminMiddleware, this.ordersController.updateOrderStatus);
   }
 }

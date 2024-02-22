@@ -6,6 +6,7 @@ import { HttpException } from '@/exceptions/HttpException';
 import { isSame, getNow, getPreviousTimeframe, getStartOfTimeframe, getEndOfTimeframe } from '@/utils/time';
 import type { Dayjs } from 'dayjs';
 import UsersService from './users.service';
+import dayjs from 'dayjs';
 
 // interface CreateChartParams {
 //   orders: (Document<unknown, any, IOrder> &
@@ -38,8 +39,8 @@ interface FilterCriteria {
 class OrdersService {
   private orderRepository = AppDataSource.getRepository(Order);
   private orderItemRepository = AppDataSource.getRepository(OrderItem);
-  private productRepository = AppDataSource.getRepository(Product); //Will be changed to product service
-  private voucherRepository = AppDataSource.getRepository(Voucher); //Will be changed to voucher service
+  private productRepository = AppDataSource.getRepository(Product); // TODO: Will be changed to product service
+  private voucherRepository = AppDataSource.getRepository(Voucher); // TODO: Will be changed to voucher service
   private usersService = new UsersService();
 
   private DEFAULT_PAGINATION_SKIP = 0;
@@ -184,7 +185,7 @@ class OrdersService {
     const voucherVerified = true;
 
     let totalPrice = productWithPrice.reduce((total, item) => (total += item.price * item.quantity), 0);
-    if (voucher != null || !voucherVerified) {
+    if (voucher != null && voucherVerified) {
       if (voucher.discountType === VoucherDiscountType.Percent) {
         totalPrice = Math.ceil((totalPrice * (100 - voucher.discountAmount)) / 100 / 1000) * 1000;
       } else {
@@ -206,35 +207,47 @@ class OrdersService {
       .select(this.FIELDS_TO_SELECT_FOR_ORDERS);
   }
 
-  // public async getSummaryOrders(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
-  //   const currentCount = await this.Order.countDocuments({
-  //     createdAt: { $gte: startDate, $lte: to },
-  //   });
-  //   const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
-  //   const previousCount = await this.Order.countDocuments({
-  //     createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
-  //   });
-  //   return { currentCount, previousCount };
-  // }
+  public async getSummaryOrders(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+    const currentCount = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.createdAt >= :startTime', { startTime: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.createdAt <= :endTime', { endTime: dayjs(to).format('YYYY-MM-DD HH:mm:ss') })
+      .getCount();
 
-  // public async getSummaryRevenues(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-  //   const currentOrders = await this.Order.find({
-  //     createdAt: { $gte: startDate.valueOf(), $lte: to },
-  //     status: 'Done',
-  //   });
-  //   const previousTimeFrame = getPreviousTimeframe(to, type).valueOf();
-  //   const previousOrders = await this.Order.find({
-  //     createdAt: { $gte: getStartOfTimeframe(previousTimeFrame, type).valueOf(), $lte: getEndOfTimeframe(previousTimeFrame, type).valueOf() },
-  //     status: 'Done',
-  //   });
-  //   const currentCount = currentOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
-  //   const previousCount = previousOrders.reduce((partialSum, order) => partialSum + order.totalPrice, 0);
-  //   // const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
-  //   // const details = await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
-  //   return { currentCount, previousCount /*, details  */ };
-  // }
+    const previousTimeStart = getStartOfTimeframe(getPreviousTimeframe(to, type).valueOf(), type).valueOf();
+    const previousTimeEnd = getEndOfTimeframe(previousTimeStart, type).valueOf();
+    const previousCount = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.createdAt >= :startTime', { startTime: dayjs(previousTimeStart).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.createdAt <= :endTime', { endTime: dayjs(previousTimeEnd).format('YYYY-MM-DD HH:mm:ss') })
+      .getCount();
+
+    return { currentCount, previousCount };
+  }
+
+  public async getSummaryRevenues(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+    const currentOrders = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.createdAt >= :startTime', { startTime: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.createdAt <= :endTime', { endTime: dayjs(to).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.status = :status', { status: 'Done' })
+      .getMany();
+
+    const previousTimeStart = getStartOfTimeframe(getPreviousTimeframe(to, type).valueOf(), type).valueOf();
+    const previousTimeEnd = getEndOfTimeframe(previousTimeStart, type).valueOf();
+    const previousOrders = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.createdAt >= :startTime', { startTime: dayjs(previousTimeStart).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.createdAt <= :endTime', { endTime: dayjs(previousTimeEnd).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.status = :status', { status: 'Done' })
+      .getMany();
+
+    const currentCount = currentOrders.reduce((partialSum, order) => partialSum + Number(order.totalPrice), 0);
+    const previousCount = previousOrders.reduce((partialSum, order) => partialSum + Number(order.totalPrice), 0);
+    return { currentCount, previousCount };
+  }
 
   // public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
   //   const startDate = getStartOfTimeframe(getNow().valueOf(), type);
