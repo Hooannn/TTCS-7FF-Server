@@ -1,8 +1,9 @@
 import { HttpException } from '@/exceptions/HttpException';
 import { Category } from '@/entity';
 import { errorStatus } from '@/config';
-import { DataSource, FindManyOptions } from 'typeorm';
+import { DataSource, FindManyOptions, Like, Raw } from 'typeorm';
 import { AppDataSource } from '@/data-source';
+import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
 
 interface CreateCategoryReq {
   nameVi: string;
@@ -14,7 +15,13 @@ class CategoriesService {
 
   public async getAllCategories({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    parseCreatedAtFilter(parseFilter);
+
+    if (parseFilter.nameVi) parseFilter.nameVi = Like(`%${parseFilter.nameVi}%`);
+    if (parseFilter.nameEn) parseFilter.nameEn = Like(`%${parseFilter.nameEn}%`);
+
     const total = await this.categoryRepository.count({ select: ['categoryId'], where: { ...parseFilter, isActive: 1 }, order: parseSort });
     const findOptions: FindManyOptions<Category> = {
       where: { ...parseFilter, isActive: 1 },
