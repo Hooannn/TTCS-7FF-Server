@@ -73,8 +73,8 @@ class VouchersService {
     if (voucher.expiredDate) {
       if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);
     }
-    if (this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId }))
-      throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
+    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId });
+    if (isVoucherAlreadyUsed) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
     return { ...voucher, _id: voucher.voucherId };
   }
 }

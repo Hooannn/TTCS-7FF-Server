@@ -19,7 +19,7 @@ class ProductsService {
   public async getProductById(id: string) {
     const product = await this.productRepository.findOne({
       where: { productId: id, isActive: 1 },
-      relations: ['images'],
+      relations: ['images', 'category'],
     });
     return {
       ...product,

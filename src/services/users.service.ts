@@ -144,12 +144,13 @@ class UsersService {
     return (
       await this.cartItemRepository.find({
         where: { userId, status: CartItemStatus.Active, product: { isActive: 1, isAvailable: 1 } },
-        relations: ['product'],
+        relations: ['product', 'product.images'],
       })
     ).map(item => ({
       ...item,
       product: {
         ...item.product,
+        featuredImages: item.product.images.map(image => image.imageUrl),
         price: item.product.currentPrice,
         name: { vi: item.product.nameVi, en: item.product.nameEn },
         description: { vi: item.product.descriptionVi, en: item.product.descriptionEn },
