@@ -1,9 +1,10 @@
 import { errorStatus } from '@/config';
 import { AppDataSource } from '@/data-source';
-import { DataSource, FindManyOptions, MoreThan, MoreThanOrEqual, Not } from 'typeorm';
+import { DataSource, FindManyOptions, Like, MoreThan, MoreThanOrEqual, Not, Raw } from 'typeorm';
 import { Voucher, Order } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { getNow } from '@/utils/time';
+import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
 
 class VouchersService {
   private voucherRepository = AppDataSource.getRepository(Voucher);
@@ -11,7 +12,12 @@ class VouchersService {
 
   public async getAllVouchers({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    parseCreatedAtFilter(parseFilter);
+
+    if (parseFilter.code) parseFilter.code = Like(`%${parseFilter.code}%`);
+
     const total = await this.voucherRepository.count({ where: { ...parseFilter, isActive: 1 } });
     const findOptions: FindManyOptions<Voucher> = {
       where: { ...parseFilter, isActive: 1 },

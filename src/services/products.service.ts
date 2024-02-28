@@ -4,6 +4,8 @@ import { DataSource, FindManyOptions, Like } from 'typeorm';
 import { Category, Product, ProductImage } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@/config';
+import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
+import { parsePriceFilter } from '@/utils/parsePriceFilter';
 
 class ProductsService {
   private productRepository = AppDataSource.getRepository(Product);
@@ -53,7 +55,16 @@ class ProductsService {
 
   public async getAllProducts({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    parseCreatedAtFilter(parseFilter);
+    parsePriceFilter(parseFilter);
+
+    if (parseFilter.nameVi) parseFilter.nameVi = Like(`%${parseFilter.nameVi}%`);
+    if (parseFilter.nameEn) parseFilter.nameEn = Like(`%${parseFilter.nameEn}%`);
+    if (parseFilter.descriptionVi) parseFilter.descriptionVi = Like(`%${parseFilter.descriptionVi}%`);
+    if (parseFilter.descriptionEn) parseFilter.descriptionEn = Like(`%${parseFilter.descriptionEn}%`);
+
     const total = await this.productRepository.count({ where: { ...parseFilter, isActive: 1 } });
     const findOptions: FindManyOptions<Product> = {
       relations: ['images', 'category'],

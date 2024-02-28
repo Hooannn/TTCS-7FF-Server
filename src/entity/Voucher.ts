@@ -15,7 +15,7 @@ export class Voucher {
   discountAmount: number;
 
   @Column({ type: 'date', nullable: true })
-  expiredDate: Date;  
+  expiredDate: Date;
 
   @Column()
   totalUsageLimit: number;

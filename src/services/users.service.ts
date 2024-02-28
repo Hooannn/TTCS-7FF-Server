@@ -2,9 +2,10 @@ import { errorStatus, SALTED_PASSWORD } from '@/config';
 import { AppDataSource } from '@/data-source';
 import { CartItem, CartItemStatus, Order, User, UserRole } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
+import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
 import { getStartOfTimeframe, getNow, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { compareSync, hashSync } from 'bcrypt';
-import { FindManyOptions, FindOptions, FindOptionsWhere } from 'typeorm';
+import { Between, FindManyOptions, FindOptions, FindOptionsWhere, LessThanOrEqual, Like, MoreThanOrEqual, Raw } from 'typeorm';
 class UsersService {
   private userRepository = AppDataSource.getRepository(User);
   private orderRepository = AppDataSource.getRepository(Order);
@@ -26,7 +27,12 @@ class UsersService {
 
   public async getAllUsers({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    if (parseFilter.email) parseFilter.email = Like(`%${parseFilter.email}%`);
+
+    parseCreatedAtFilter(parseFilter);
+
     const where: FindOptionsWhere<User> = { ...parseFilter, role: UserRole.User, isActive: 1 };
     const total = await this.userRepository.count({ select: ['userId'], where, order: parseSort });
     const findOptions: FindManyOptions<User> = {
@@ -44,7 +50,12 @@ class UsersService {
 
   public async getAllStaffs({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
-    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "-1" }');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    if (parseFilter.email) parseFilter.email = Like(`%${parseFilter.email}%`);
+
+    parseCreatedAtFilter(parseFilter);
+
     const where: FindOptionsWhere<User> = { ...parseFilter, role: UserRole.Staff, isActive: 1 };
     const total = await this.userRepository.count({ select: ['userId'], where, order: parseSort });
     const findOptions: FindManyOptions<User> = {
