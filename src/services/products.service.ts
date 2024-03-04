@@ -1,7 +1,7 @@
 import { isSameTimeframe, getNow, getTime } from '@/utils/time';
 import { AppDataSource } from '@/data-source';
 import { DataSource, FindManyOptions, Like } from 'typeorm';
-import { Category, Product, ProductImage } from '@/entity';
+import { OrderItem, Product, ProductImage } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@/config';
 import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
@@ -9,7 +9,7 @@ import { parsePriceFilter } from '@/utils/parsePriceFilter';
 
 class ProductsService {
   private productRepository = AppDataSource.getRepository(Product);
-  private categoryRepository = AppDataSource.getRepository(Category);
+  private orderItemRepository = AppDataSource.getRepository(OrderItem);
   private productImagesRepository = AppDataSource.getRepository(ProductImage);
 
   public async resetProductsDailyData() {
@@ -145,6 +145,8 @@ class ProductsService {
   }
 
   public async deleteProduct(productId: string) {
+    const isUsed = await this.orderItemRepository.existsBy({ productId });
+    if (isUsed) throw new HttpException(400, errorStatus.PRODUCT_IS_USED);
     return this.productRepository.update(productId, { isActive: 0 });
   }
 

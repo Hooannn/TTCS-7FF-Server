@@ -47,13 +47,13 @@ class OrdersService {
   private DEFAULT_PAGINATION_LIMIT = 8;
   private FIELDS_TO_SELECT_FOR_ORDERS = [
     'order',
-    'item.price',
+    'item',
     'customer.email',
     'customer.firstName',
     'customer.lastName',
-    'item.quantity',
     'product.nameVi',
     'product.nameEn',
+    'productImages.imageUrl',
     'voucher.code',
   ];
 
@@ -95,6 +95,7 @@ class OrdersService {
       .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.items', 'item')
       .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('product.images', 'productImages')
       .leftJoinAndSelect('order.voucher', 'voucher');
 
     const VALID_FILTER_CRITERIA = ['customerId', 'deliveryPhone', 'deliveryAddress', 'status', 'voucherId', 'staffId'];

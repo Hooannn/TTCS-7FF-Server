@@ -94,10 +94,14 @@ class UsersService {
   }
 
   public async deleteUser(userId: string) {
+    const hasOrder = await this.orderRepository.existsBy({ customerId: userId });
+    if (hasOrder) throw new HttpException(400, errorStatus.USER_HAS_ORDER);
     return this.userRepository.update({ userId, role: UserRole.User }, { isActive: 0 });
   }
 
   public async deleteStaff(userId: string) {
+    const hasOrder = await this.orderRepository.existsBy({ customerId: userId });
+    if (hasOrder) throw new HttpException(400, errorStatus.USER_HAS_ORDER);
     return this.userRepository.update({ userId, role: UserRole.Staff }, { isActive: 0 });
   }
 

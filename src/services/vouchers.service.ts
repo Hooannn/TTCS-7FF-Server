@@ -51,6 +51,8 @@ class VouchersService {
   }
 
   public async deleteVoucher(voucherId: string) {
+    const isUsed = await this.orderRepository.existsBy({ voucherId });
+    if (isUsed) throw new HttpException(400, errorStatus.VOUCHER_IS_USED);
     return this.voucherRepository.update(voucherId, { isActive: 0 });
   }
 
