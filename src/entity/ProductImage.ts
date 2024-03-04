@@ -3,12 +3,12 @@ import { Product } from './Product';
 
 @Entity({ name: 'PRODUCT_IMAGE' })
 export class ProductImage {
-  @PrimaryColumn()
+  @PrimaryColumn({ length: 191 })
   imageUrl: string;
 
-  @Column()
+  @Column({ length: 36 })
   productId: string;
-  
+
   @ManyToOne(() => Product, product => product.images)
   @JoinColumn({ name: 'productId' })
   product: Product;

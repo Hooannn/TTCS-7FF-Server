@@ -5,7 +5,7 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   userId: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, type: 'varchar', length: 191 })
   email: string;
 
   @Column()
@@ -29,7 +29,7 @@ export class User {
   @Column({ type: 'enum', enum: ['User', 'Staff', 'Admin'] })
   role: UserRole;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ precision: null, type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
   @Column({ type: 'bit', default: () => `b'1'` })

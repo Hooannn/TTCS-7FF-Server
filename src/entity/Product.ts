@@ -25,13 +25,13 @@ export class Product {
   @Column({ type: 'bit' })
   isAvailable: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ precision: null, type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
   @Column({ type: 'bit', default: () => `b'1'` })
   isActive: number;
 
-  @Column()
+  @Column({ length: 36 })
   categoryId: string;
 
   @ManyToOne(() => Category)

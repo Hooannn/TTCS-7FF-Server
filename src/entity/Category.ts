@@ -14,7 +14,7 @@ export class Category {
   @Column({ nullable: true })
   icon: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ precision: null, type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
   @Column({ type: 'bit', default: () => `b'1'` })

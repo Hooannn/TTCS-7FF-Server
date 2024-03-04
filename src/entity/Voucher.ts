@@ -14,13 +14,13 @@ export class Voucher {
   @Column('decimal', { precision: 10, scale: 2 })
   discountAmount: number;
 
-  @Column({ type: 'date', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   expiredDate: Date;
 
   @Column()
   totalUsageLimit: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ precision: null, type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
   @Column({ type: 'bit', default: () => `b'1'` })

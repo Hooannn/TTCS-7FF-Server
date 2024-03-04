@@ -4,6 +4,7 @@ import { User, Order, OrderItem, CartItem, Category, Product, ProductImage, Vouc
 import { DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD, DB_NAME } from './config';
 export const AppDataSource = new DataSource({
   type: 'mysql',
+  charset: 'utf8mb4',
   host: DB_HOST,
   port: parseInt(DB_PORT),
   username: DB_USERNAME,

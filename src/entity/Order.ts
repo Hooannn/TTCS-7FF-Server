@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { User } from './User';
 import { Voucher } from './Voucher';
 import { OrderItem } from './OrderItem';
@@ -14,7 +14,7 @@ export class Order {
   @Column({ nullable: true, type: 'text' })
   note: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ precision: null, type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
   @Column()
@@ -32,7 +32,7 @@ export class Order {
   @Column({ type: 'enum', enum: ['Pending', 'Processing', 'Rejected', 'Done'] })
   status: OrderStatus;
 
-  @UpdateDateColumn()
+  @Column({ type: 'timestamp' })
   updatedAt: Date;
 
   @Column({ length: 36 })
