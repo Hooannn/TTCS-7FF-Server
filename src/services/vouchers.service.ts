@@ -1,7 +1,7 @@
 import { errorStatus } from '@/config';
 import { AppDataSource } from '@/data-source';
 import { DataSource, FindManyOptions, Like, MoreThan, MoreThanOrEqual, Not, Raw } from 'typeorm';
-import { Voucher, Order } from '@/entity';
+import { Voucher, Order, OrderStatus } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { getNow } from '@/utils/time';
 import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
@@ -69,13 +69,21 @@ class VouchersService {
   public async checkVoucherByCode(code: string, userId: string) {
     const voucher = await this.voucherRepository.findOneBy({
       code: code.toUpperCase(),
-      totalUsageLimit: MoreThan(0),
     });
     if (!voucher) throw new HttpException(400, errorStatus.VOUCHER_NOT_FOUND);
+
+    // count the number of orders that used this voucher and is not rejected
+    const currentUsage = await this.orderRepository.countBy({ voucherId: voucher.voucherId, status: Not(OrderStatus.Rejected) });
+    if (currentUsage >= voucher.totalUsageLimit) throw new HttpException(400, errorStatus.VOUCHER_EXHAUSTED);
+
     if (voucher.expiredDate) {
       if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);
     }
-    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId });
+    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({
+      customerId: userId,
+      voucherId: voucher.voucherId,
+      status: Not(OrderStatus.Rejected),
+    });
     if (isVoucherAlreadyUsed) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
     return { ...voucher, _id: voucher.voucherId };
   }
@@ -83,13 +91,21 @@ class VouchersService {
   public async checkVoucherById(voucherId: string, userId: string) {
     const voucher = await this.voucherRepository.findOneBy({
       voucherId,
-      totalUsageLimit: MoreThan(0),
     });
     if (!voucher) throw new HttpException(400, errorStatus.VOUCHER_NOT_FOUND);
+
+    // count the number of orders that used this voucher and is not rejected
+    const currentUsage = await this.orderRepository.countBy({ voucherId: voucher.voucherId, status: Not(OrderStatus.Rejected) });
+    if (currentUsage >= voucher.totalUsageLimit) throw new HttpException(400, errorStatus.VOUCHER_EXHAUSTED);
+
     if (voucher.expiredDate) {
       if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);
     }
-    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId });
+    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({
+      customerId: userId,
+      voucherId: voucher.voucherId,
+      status: Not(OrderStatus.Rejected),
+    });
     if (isVoucherAlreadyUsed) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
     return { ...voucher, _id: voucher.voucherId };
   }
