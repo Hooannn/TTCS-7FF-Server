@@ -79,5 +79,19 @@ class VouchersService {
     if (isVoucherAlreadyUsed) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
     return { ...voucher, _id: voucher.voucherId };
   }
+
+  public async checkVoucherById(voucherId: string, userId: string) {
+    const voucher = await this.voucherRepository.findOneBy({
+      voucherId,
+      totalUsageLimit: MoreThan(0),
+    });
+    if (!voucher) throw new HttpException(400, errorStatus.VOUCHER_NOT_FOUND);
+    if (voucher.expiredDate) {
+      if (getNow().isAfter(voucher.expiredDate)) throw new HttpException(400, errorStatus.VOUCHER_EXPIRED);
+    }
+    const isVoucherAlreadyUsed = await this.orderRepository.existsBy({ customerId: userId, voucherId: voucher.voucherId });
+    if (isVoucherAlreadyUsed) throw new HttpException(400, errorStatus.VOUCHER_ALREADY_USED);
+    return { ...voucher, _id: voucher.voucherId };
+  }
 }
 export default VouchersService;

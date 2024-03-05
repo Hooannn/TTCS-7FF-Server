@@ -7,6 +7,7 @@ import { isSame, getNow, getPreviousTimeframe, getStartOfTimeframe, getEndOfTime
 import type { Dayjs } from 'dayjs';
 import UsersService from './users.service';
 import dayjs from 'dayjs';
+import VouchersService from './vouchers.service';
 
 // interface CreateChartParams {
 //   orders: (Document<unknown, any, IOrder> &
@@ -40,7 +41,7 @@ class OrdersService {
   private orderRepository = AppDataSource.getRepository(Order);
   private orderItemRepository = AppDataSource.getRepository(OrderItem);
   private productRepository = AppDataSource.getRepository(Product); // TODO: Will be changed to product service
-  private voucherRepository = AppDataSource.getRepository(Voucher); // TODO: Will be changed to voucher service
+  private voucherService = new VouchersService();
   private usersService = new UsersService();
 
   private DEFAULT_PAGINATION_SKIP = 0;
@@ -66,6 +67,7 @@ class OrdersService {
       .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.items', 'item')
       .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('product.images', 'productImages')
       .leftJoinAndSelect('order.voucher', 'voucher')
       .select(this.FIELDS_TO_SELECT_FOR_ORDERS);
 
@@ -128,7 +130,7 @@ class OrdersService {
     const user = await this.usersService.findUserById(order.customerId);
     if (!user) throw new HttpException(400, errorStatus.USER_NOT_FOUND);
 
-    const { productWithPrice, totalPrice } = await this.fetchProductPrice(order.items, order.voucherId);
+    const { productWithPrice, totalPrice } = await this.fetchProductPrice(order.items, order.customerId, order.voucherId);
 
     const newOrder = this.orderRepository.create({
       customerId: order.customerId,
@@ -156,6 +158,13 @@ class OrdersService {
 
   public async updateOrderStatus(orderId: string, status: OrderStatus, rejectionReason?: string, staffId?: string) {
     if (status === 'Rejected' && !rejectionReason) throw new HttpException(404, errorStatus.MISSING_REJECTION_REASON);
+    const currentOrder = await this.orderRepository.findOneBy({ orderId });
+    if (!currentOrder) throw new HttpException(400, errorStatus.ORDER_NOT_FOUND);
+
+    const allowedUpdateStatuses = [OrderStatus.Pending, OrderStatus.Processing];
+
+    if (!allowedUpdateStatuses.includes(currentOrder.status)) throw new HttpException(400, errorStatus.STATUS_NOT_ALLOW_UPDATE);
+
     const updateResult = await this.orderRepository.update(
       { orderId },
       {
@@ -169,7 +178,7 @@ class OrdersService {
     return await this.getOrderByIdQueryBuilder(orderId).getOne();
   }
 
-  private async fetchProductPrice(items: { productId: string; quantity: number }[], voucherId?: string) {
+  private async fetchProductPrice(items: { productId: string; quantity: number }[], userId: string, voucherId?: string) {
     const getPricePromises = items.map(async item => {
       const product = await this.productRepository.findOneBy({ productId: item.productId });
       return {
@@ -180,17 +189,16 @@ class OrdersService {
     });
 
     const productWithPrice = await Promise.all(getPricePromises);
-    const voucher = await this.voucherRepository.findOneBy({ voucherId: voucherId ?? '' });
-    // TODO: Verify voucher again
-    const voucherVerified = true;
+    const voucher = voucherId ? await this.voucherService.checkVoucherById(voucherId, userId) : null;
 
     let totalPrice = productWithPrice.reduce((total, item) => (total += item.price * item.quantity), 0);
-    if (voucher != null && voucherVerified) {
+    if (voucher != null) {
       if (voucher.discountType === VoucherDiscountType.Percent) {
         totalPrice = Math.ceil((totalPrice * (100 - voucher.discountAmount)) / 100 / 1000) * 1000;
       } else {
         totalPrice = Math.ceil((totalPrice - voucher.discountAmount) / 1000) * 1000;
       }
+      totalPrice = totalPrice <= 0 ? 0 : totalPrice;
     }
 
     return { productWithPrice, totalPrice };
@@ -203,6 +211,7 @@ class OrdersService {
       .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.items', 'item')
       .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('product.images', 'productImages')
       .leftJoinAndSelect('order.voucher', 'voucher')
       .select(this.FIELDS_TO_SELECT_FOR_ORDERS);
   }
