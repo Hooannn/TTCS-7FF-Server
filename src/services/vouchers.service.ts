@@ -32,6 +32,45 @@ class VouchersService {
     return { total, vouchers: vouchers.map(v => ({ ...v, _id: v.voucherId })) };
   }
 
+  public async getAllVouchersWithCurrentUsage({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
+    const queryBuilder = this.voucherRepository
+      .createQueryBuilder('voucher')
+      .select([
+        'voucher.voucherId as voucherId',
+        'count(order.orderId) as currentUsage',
+        'voucher.code as code',
+        'voucher.discountType as discountType',
+        'voucher.discountAmount as discountAmount',
+        'voucher.expiredDate as expiredDate',
+        'voucher.totalUsageLimit as totalUsageLimit',
+        'voucher.createdAt as createdAt',
+      ])
+      .leftJoin('voucher.orders', 'order', 'order.status != :rejected', { rejected: OrderStatus.Rejected })
+      .groupBy('voucher.voucherId');
+
+    const parseFilter = JSON.parse(filter ? filter : '{}');
+    const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
+
+    parseCreatedAtFilter(parseFilter);
+
+    if (parseFilter.code) parseFilter.code = Like(`%${parseFilter.code}%`);
+
+    const findOptions: FindManyOptions<Voucher> = {
+      where: { ...parseFilter, isActive: 1 },
+      order: parseSort,
+      skip,
+      take: limit,
+    };
+
+    if (!skip) delete findOptions.skip;
+    if (!limit) delete findOptions.take;
+
+    queryBuilder.setFindOptions(findOptions);
+    const total = await this.voucherRepository.count({ where: { ...parseFilter, isActive: 1 } });
+    const vouchers = await queryBuilder.getRawMany();
+    return { total, vouchers: vouchers.map(v => ({ ...v, _id: v.voucherId })) };
+  }
+
   public async addVoucher(reqVoucher: Partial<Voucher>) {
     const { code, discountType, discountAmount, totalUsageLimit, expiredDate } = reqVoucher;
     const isVoucherExisted = await this.voucherRepository.findOneBy({ code, isActive: 1 });

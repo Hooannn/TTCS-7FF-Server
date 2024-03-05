@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm';
+import { Order } from './Order';
 
 @Entity({ name: 'VOUCHER' })
 export class Voucher {
@@ -25,6 +26,9 @@ export class Voucher {
 
   @Column({ type: 'bit', default: () => `b'1'` })
   isActive: number;
+
+  @OneToMany(() => Order, order => order.voucher)
+  orders: Order[];
 }
 
 export enum VoucherDiscountType {

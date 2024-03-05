@@ -1,4 +1,4 @@
-import { isSameTimeframe, getNow, getTime } from '@/utils/time';
+import { isSameTimeframe, getNow, getTime, getStartOfTimeframe, getPreviousTimeframe } from '@/utils/time';
 import { AppDataSource } from '@/data-source';
 import { DataSource, FindManyOptions, Like } from 'typeorm';
 import { OrderItem, Product, ProductImage } from '@/entity';
@@ -6,6 +6,7 @@ import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@/config';
 import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
 import { parsePriceFilter } from '@/utils/parsePriceFilter';
+import dayjs from 'dayjs';
 
 class ProductsService {
   private productRepository = AppDataSource.getRepository(Product);
@@ -33,12 +34,8 @@ class ProductsService {
   }
 
   public async getPopularProducts(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
-    const [highestViewCountProducts, highestTotalSoldUnitsProducts, highestTotalSalesProducts] = await Promise.all([
-      await this.getHighestViewCountProducts(type, limit),
-      await this.getHighestTotalSoldProducts(type, 'totalUnits', limit),
-      await this.getHighestTotalSoldProducts(type, 'totalSales', limit),
-    ]);
-    return { highestViewCountProducts, highestTotalSoldUnitsProducts, highestTotalSalesProducts };
+    const highestTotalSoldUnitsProducts = await this.getHighestTotalSoldProductsByUnit(type, limit);
+    return { highestViewCountProducts: [], highestTotalSoldUnitsProducts, highestTotalSalesProducts: [] };
   }
 
   public async findOneProductByCategory(id: string) {
@@ -173,12 +170,45 @@ class ProductsService {
     return Math.ceil(dayOfYear / 7);
   };
 
-  private async getHighestViewCountProducts(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit: number) {
-    return [];
-  }
+  private async getHighestTotalSoldProductsByUnit(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit: number) {
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
 
-  private async getHighestTotalSoldProducts(type: 'daily' | 'weekly' | 'monthly' | 'yearly', field: 'totalSales' | 'totalUnits', limit: number) {
-    return [];
+    const results = await this.productRepository
+      .createQueryBuilder('product')
+      .select([
+        'product.productId as productId',
+        'product.nameVi as nameVi',
+        'product.nameEn as nameEn',
+        'product.descriptionVi as descriptionVi',
+        'product.descriptionEn as descriptionEn',
+        'product.currentPrice as currentPrice',
+        'product.createdAt as createdAt',
+        'category.nameVi as categoryNameVi',
+        'category.nameEn as categoryNameEn',
+        'productImages.imageUrl as featuredImage',
+      ])
+      .addSelect('SUM(orderItem.quantity)', 'totalSoldUnits')
+      .leftJoin('product.images', 'productImages')
+      .leftJoin('product.category', 'category')
+      .leftJoin('ORDER_ITEM', 'orderItem', 'product.productId = orderItem.productId')
+      .leftJoin('ORDER', 'order', 'order.orderId = orderItem.orderId and order.status = "Done"')
+      .where('order.createdAt BETWEEN :start AND :end', {
+        start: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss'),
+        end: dayjs(getNow().valueOf()).format('YYYY-MM-DD HH:mm:ss'),
+      })
+      .andWhere('product.isActive = 1')
+      .groupBy('product.productId')
+      .orderBy('totalSoldUnits', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    return results.map(result => ({
+      ...result,
+      _id: result.productId,
+      name: { vi: result.nameVi, en: result.nameEn },
+      description: { vi: result.descriptionVi, en: result.descriptionEn },
+      category: { name: { vi: result.categoryNameVi, en: result.categoryNameEn } },
+    }));
   }
 }
 

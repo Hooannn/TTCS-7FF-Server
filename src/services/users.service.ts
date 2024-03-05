@@ -5,6 +5,7 @@ import { HttpException } from '@/exceptions/HttpException';
 import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
 import { getStartOfTimeframe, getNow, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { compareSync, hashSync } from 'bcrypt';
+import dayjs from 'dayjs';
 import { Between, FindManyOptions, FindOptions, FindOptionsWhere, LessThanOrEqual, Like, MoreThanOrEqual, Raw } from 'typeorm';
 class UsersService {
   private userRepository = AppDataSource.getRepository(User);
@@ -141,7 +142,24 @@ class UsersService {
   }
 
   public async getSummaryUsers(to: number, type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    return { currentCount: 0, previousCount: 0 };
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+    const currentCount = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.createdAt >= :startTime', { startTime: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('user.createdAt <= :endTime', { endTime: dayjs(to).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('user.isActive = 1')
+      .getCount();
+
+    const previousTimeStart = getStartOfTimeframe(getPreviousTimeframe(to, type).valueOf(), type).valueOf();
+    const previousTimeEnd = getEndOfTimeframe(previousTimeStart, type).valueOf();
+    const previousCount = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.createdAt >= :startTime', { startTime: dayjs(previousTimeStart).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('user.createdAt <= :endTime', { endTime: dayjs(previousTimeEnd).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('user.isActive = 1')
+      .getCount();
+
+    return { currentCount, previousCount };
   }
 
   public async getCartItems(userId: string) {
@@ -191,11 +209,42 @@ class UsersService {
   }
 
   public async getNewestUsers(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
-    return [];
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).toDate();
+    return await this.userRepository.find({
+      where: { createdAt: MoreThanOrEqual(startDate), isActive: 1 },
+      order: { createdAt: 'DESC' },
+      take: limit,
+      select: ['userId', 'email', 'firstName', 'lastName', 'avatar', 'role', 'address', 'phoneNumber', 'address', 'createdAt'],
+    });
   }
 
   public async getUsersWithHighestTotalOrderValue(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
-    return [];
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+
+    const users = await this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.userId as userId',
+        'user.email as email',
+        'user.firstName as firstName',
+        'user.lastName as lastName',
+        'user.avatar as avatar',
+        'user.role as role',
+        'user.address as address',
+        'user.phoneNumber as phoneNumber',
+        'user.address as address',
+        'user.createdAt as createdAt',
+      ])
+      .addSelect('SUM(order.totalPrice) as totalOrderValue')
+      .innerJoin('ORDER', 'order', 'user.userId = order.customerId and order.status = "Done"')
+      .where('order.createdAt >= :startDate', { startDate: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('user.isActive = 1')
+      .groupBy('user.userId')
+      .orderBy('totalOrderValue', 'DESC')
+      .limit(limit)
+      .getRawMany();
+
+    return users;
   }
 }
 

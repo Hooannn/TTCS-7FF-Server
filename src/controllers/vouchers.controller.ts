@@ -8,7 +8,7 @@ class VouchersController {
   public getAllVouchers = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { skip, limit, filter, sort } = req.query;
-      const { total, vouchers } = await this.vouchersService.getAllVouchers({
+      const { total, vouchers } = await this.vouchersService.getAllVouchersWithCurrentUsage({
         skip: parseInt(skip?.toString()),
         limit: parseInt(limit?.toString()),
         filter: filter?.toString(),
