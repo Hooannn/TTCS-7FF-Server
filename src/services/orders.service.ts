@@ -180,8 +180,7 @@ class OrdersService {
     });
 
     const productWithPrice = await Promise.all(getPricePromises);
-    const voucher = await this.voucherRepository.findOneBy({ voucherId });
-
+    const voucher = await this.voucherRepository.findOneBy({ voucherId: voucherId ?? '' });
     // TODO: Verify voucher again
     const voucherVerified = true;
 

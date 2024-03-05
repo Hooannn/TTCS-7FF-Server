@@ -6,7 +6,7 @@ export class ProductImage {
   @PrimaryColumn({ length: 191 })
   imageUrl: string;
 
-  @Column({ length: 36 })
+  @Column({ length: 36, nullable: true })
   productId: string;
 
   @ManyToOne(() => Product, product => product.images)
