@@ -9,26 +9,20 @@ import UsersService from './users.service';
 import dayjs from 'dayjs';
 import VouchersService from './vouchers.service';
 
-// interface CreateChartParams {
-//   orders: (Document<unknown, any, IOrder> &
-//     Omit<
-//       IOrder & {
-//         _id: Types.ObjectId;
-//       },
-//       never
-//     >)[];
-//   startDate: Dayjs;
-//   columns: number;
-//   timeUnit: string;
-//   format: string;
-// }
+interface CreateChartParams {
+  orders: Order[];
+  startDate: Dayjs;
+  columns: number;
+  timeUnit: string;
+  format: string;
+}
 
-// interface ChartData {
-//   date: Dayjs;
-//   name: string;
-//   totalSales: number;
-//   totalUnits: number;
-// }
+interface ChartData {
+  date: Dayjs;
+  name: string;
+  totalSales: number;
+  totalUnits: number;
+}
 
 interface FilterCriteria {
   customerId?: string;
@@ -258,60 +252,62 @@ class OrdersService {
     return { currentCount, previousCount };
   }
 
-  // public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-  //   const startDate = getStartOfTimeframe(getNow().valueOf(), type);
-  //   const currentOrders = await this.Order.find({
-  //     createdAt: { $gte: startDate.valueOf(), $lte: getNow().valueOf() },
-  //     status: 'Done',
-  //   });
-  //   const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
-  //   return await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
-  // }
+  public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type);
+    const currentOrders = await this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.createdAt >= :startTime', { startTime: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss') })
+      .andWhere('order.status = :status', { status: 'Done' })
+      .leftJoinAndSelect('order.items', 'item')
+      .getMany();
+    const { columns, timeUnit, format } = this.prepareCreateChartParams(type, startDate);
+    return await this.createRevenuesChart({ orders: currentOrders, startDate, columns, timeUnit, format });
+  }
 
-  // private prepareCreateChartParams(type: 'daily' | 'weekly' | 'monthly' | 'yearly', startDate: Dayjs) {
-  //   switch (type) {
-  //     case 'daily':
-  //       return {
-  //         columns: 24,
-  //         timeUnit: 'hour',
-  //         format: 'hh:mm',
-  //       };
-  //     case 'weekly':
-  //       return {
-  //         columns: 7,
-  //         timeUnit: 'day',
-  //         format: 'dddd DD-MM',
-  //       };
-  //     case 'monthly':
-  //       return {
-  //         columns: startDate.daysInMonth(),
-  //         timeUnit: 'day',
-  //         format: 'dddd DD-MM',
-  //       };
-  //     case 'yearly':
-  //       return {
-  //         columns: 12,
-  //         timeUnit: 'month',
-  //         format: 'MMMM',
-  //       };
-  //   }
-  // }
+  private prepareCreateChartParams(type: 'daily' | 'weekly' | 'monthly' | 'yearly', startDate: Dayjs) {
+    switch (type) {
+      case 'daily':
+        return {
+          columns: 24,
+          timeUnit: 'hour',
+          format: 'hh:mm',
+        };
+      case 'weekly':
+        return {
+          columns: 7,
+          timeUnit: 'day',
+          format: 'dddd DD-MM',
+        };
+      case 'monthly':
+        return {
+          columns: startDate.daysInMonth(),
+          timeUnit: 'day',
+          format: 'dddd DD-MM',
+        };
+      case 'yearly':
+        return {
+          columns: 12,
+          timeUnit: 'month',
+          format: 'MMMM',
+        };
+    }
+  }
 
-  // private async createRevenuesChart({ orders, startDate, columns, timeUnit, format }: CreateChartParams) {
-  //   const results: ChartData[] = Array.from(Array(columns), (_, i) => ({
-  //     date: startDate.add(i, timeUnit as any),
-  //     name: startDate.add(i, timeUnit as any).format(format),
-  //     totalSales: 0,
-  //     totalUnits: 0,
-  //   }));
-  //   orders.forEach(({ totalPrice, createdAt, items }: any) => {
-  //     const index = results.findIndex(result => isSame(createdAt, result.date, timeUnit));
-  //     const totalUnits = items.reduce((partialSum: any, item: any) => partialSum + item.quantity, 0);
-  //     results[index].totalSales = results[index].totalSales + totalPrice;
-  //     results[index].totalUnits = results[index].totalUnits + totalUnits;
-  //   });
-  //   return results;
-  // }
+  private async createRevenuesChart({ orders, startDate, columns, timeUnit, format }: CreateChartParams) {
+    const results: ChartData[] = Array.from(Array(columns), (_, i) => ({
+      date: startDate.add(i, timeUnit as any),
+      name: startDate.add(i, timeUnit as any).format(format),
+      totalSales: 0,
+      totalUnits: 0,
+    }));
+    orders.forEach(({ totalPrice, createdAt, items }: any) => {
+      const index = results.findIndex(result => isSame(createdAt, result.date, timeUnit));
+      const totalUnits = items.reduce((partialSum: any, item: any) => partialSum + item.quantity, 0);
+      results[index].totalSales = results[index].totalSales + parseFloat(totalPrice);
+      results[index].totalUnits = results[index].totalUnits + totalUnits;
+    });
+    return results;
+  }
 }
 
 export default OrdersService;

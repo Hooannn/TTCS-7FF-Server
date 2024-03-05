@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Routes } from '@interfaces/routes.interface';
-import adminMiddleware from '@/middlewares/admin.middleware';
 import CategoriesController from '@/controllers/categories.controller';
+import staffMiddleware from '@/middlewares/staff.middleware';
 
 class CategoriesRoute implements Routes {
   public path = '/categories';
@@ -14,9 +14,9 @@ class CategoriesRoute implements Routes {
 
   private initializeRoutes() {
     this.router.get(`${this.path}`, this.categoriesController.getAllCategories);
-    this.router.post(`${this.path}`, adminMiddleware, this.categoriesController.addCategory);
-    this.router.delete(`${this.path}`, adminMiddleware, this.categoriesController.deleteCategory);
-    this.router.patch(`${this.path}`, adminMiddleware, this.categoriesController.updateCategory);
+    this.router.post(`${this.path}`, staffMiddleware, this.categoriesController.addCategory);
+    this.router.delete(`${this.path}`, staffMiddleware, this.categoriesController.deleteCategory);
+    this.router.patch(`${this.path}`, staffMiddleware, this.categoriesController.updateCategory);
   }
 }
 

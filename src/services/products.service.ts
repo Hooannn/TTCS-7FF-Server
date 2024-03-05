@@ -22,6 +22,7 @@ class ProductsService {
       where: { productId: id, isActive: 1 },
       relations: ['images', 'category'],
     });
+    if (!product) throw new HttpException(400, errorStatus.PRODUCT_NOT_FOUND);
     return {
       ...product,
       price: product.currentPrice,
@@ -101,6 +102,48 @@ class ProductsService {
     };
   }
 
+  public getAllProductsWithTotalSoldUnits = async (type: 'daily' | 'weekly' | 'monthly' | 'yearly') => {
+    const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
+
+    const results = await this.productRepository.manager.query(`
+        SELECT 
+          p.productId as productId, 
+          p.nameVi as nameVi, 
+          p.nameEn as nameEn, 
+          p.descriptionVi as descriptionVi, 
+          p.descriptionEn as descriptionEn, 
+          p.currentPrice as currentPrice, 
+          p.createdAt as createdAt, 
+          category.nameVi as categoryNameVi, 
+          category.nameEn as categoryNameEn, 
+          SUM(filteredOrders.quantity) AS totalSoldUnits,
+          (SELECT pi2.imageUrl FROM PRODUCT_IMAGE pi2 WHERE pi2.productId = p.productId LIMIT 1) AS featuredImage
+        FROM 
+          PRODUCT p
+        LEFT JOIN 
+          CATEGORY category ON category.categoryId = p.categoryId
+        LEFT JOIN 
+          (select oi.orderId, oi.productId, oi.quantity from ORDER_ITEM oi join \`ORDER\` o on oi.orderId = o.orderId and o.status = 'Done' and o.createdAt >= '${dayjs(
+            startDate,
+          ).format('YYYY-MM-DD HH:mm:ss')}') 
+    	      AS filteredOrders 
+        ON 
+          filteredOrders.productId = p.productId
+        WHERE 
+          p.isActive = 1
+        GROUP BY 
+          p.productId
+      `);
+
+    return results.map(result => ({
+      ...result,
+      _id: result.productId,
+      name: { vi: result.nameVi, en: result.nameEn },
+      description: { vi: result.descriptionVi, en: result.descriptionEn },
+      category: { name: { vi: result.categoryNameVi, en: result.categoryNameEn } },
+    }));
+  };
+
   public async searchProducts({ q }: { q: string }) {
     const findOptions: FindManyOptions<Product> = {
       relations: ['images'],
@@ -173,34 +216,39 @@ class ProductsService {
   private async getHighestTotalSoldProductsByUnit(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit: number) {
     const startDate = getStartOfTimeframe(getNow().valueOf(), type).valueOf();
 
-    const results = await this.productRepository
-      .createQueryBuilder('product')
-      .select([
-        'product.productId as productId',
-        'product.nameVi as nameVi',
-        'product.nameEn as nameEn',
-        'product.descriptionVi as descriptionVi',
-        'product.descriptionEn as descriptionEn',
-        'product.currentPrice as currentPrice',
-        'product.createdAt as createdAt',
-        'category.nameVi as categoryNameVi',
-        'category.nameEn as categoryNameEn',
-        'productImages.imageUrl as featuredImage',
-      ])
-      .addSelect('SUM(orderItem.quantity)', 'totalSoldUnits')
-      .leftJoin('product.images', 'productImages')
-      .leftJoin('product.category', 'category')
-      .leftJoin('ORDER_ITEM', 'orderItem', 'product.productId = orderItem.productId')
-      .leftJoin('ORDER', 'order', 'order.orderId = orderItem.orderId and order.status = "Done"')
-      .where('order.createdAt BETWEEN :start AND :end', {
-        start: dayjs(startDate).format('YYYY-MM-DD HH:mm:ss'),
-        end: dayjs(getNow().valueOf()).format('YYYY-MM-DD HH:mm:ss'),
-      })
-      .andWhere('product.isActive = 1')
-      .groupBy('product.productId')
-      .orderBy('totalSoldUnits', 'DESC')
-      .limit(limit)
-      .getRawMany();
+    const results = await this.productRepository.manager.query(`
+        SELECT 
+          p.productId as productId, 
+          p.nameVi as nameVi, 
+          p.nameEn as nameEn, 
+          p.descriptionVi as descriptionVi, 
+          p.descriptionEn as descriptionEn, 
+          p.currentPrice as currentPrice, 
+          p.createdAt as createdAt, 
+          category.nameVi as categoryNameVi, 
+          category.nameEn as categoryNameEn, 
+          SUM(filteredOrders.quantity) AS totalSoldUnits,
+          (SELECT pi2.imageUrl FROM PRODUCT_IMAGE pi2 WHERE pi2.productId = p.productId LIMIT 1) AS featuredImage
+        FROM 
+          PRODUCT p
+        LEFT JOIN 
+          CATEGORY category ON category.categoryId = p.categoryId
+        JOIN 
+          (select oi.orderId, oi.productId, oi.quantity, o.createdAt from ORDER_ITEM oi join \`ORDER\` o on oi.orderId = o.orderId and o.status = 'Done' AND o.createdAt >= '${dayjs(
+            startDate,
+          ).format('YYYY-MM-DD HH:mm:ss')}') 
+    	      AS filteredOrders 
+        ON 
+          filteredOrders.productId = p.productId
+        WHERE 
+          p.isActive = 1
+        GROUP BY 
+          p.productId
+        ORDER BY 
+	        totalSoldUnits DESC
+        LIMIT 
+          ${limit}
+      `);
 
     return results.map(result => ({
       ...result,

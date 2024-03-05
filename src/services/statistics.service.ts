@@ -29,8 +29,7 @@ class StatisticsService {
   }
 
   public async getRevenuesChart(type: 'daily' | 'weekly' | 'monthly' | 'yearly') {
-    // return this.ordersService.getRevenuesChart(type);
-    return null;
+    return this.ordersService.getRevenuesChart(type);
   }
 }
 

@@ -38,6 +38,16 @@ class ProductsController {
     }
   };
 
+  public getAllProductsWithTotalSoldUnits = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { type } = req.query;
+      const products = await this.productsService.getAllProductsWithTotalSoldUnits(type as any);
+      res.status(200).json({ code: 200, success: true, data: products, took: products.length });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public searchProducts = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { q } = req.query;

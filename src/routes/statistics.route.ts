@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Routes } from '@interfaces/routes.interface';
 import StatisticsController from '@/controllers/statistics.controller';
-import adminMiddleware from '@/middlewares/admin.middleware';
+import staffMiddleware from '@/middlewares/staff.middleware';
 
 class StatisticsRoute implements Routes {
   public path = '/statistics';
@@ -13,10 +13,10 @@ class StatisticsRoute implements Routes {
   }
 
   private initializeRoutes() {
-    this.router.get(`${this.path}`, adminMiddleware, this.statisticsController.getStatistics);
-    this.router.get(`${this.path}/popular-products`, adminMiddleware, this.statisticsController.getPopularProducts);
-    this.router.get(`${this.path}/charts/revenues`, adminMiddleware, this.statisticsController.getRevenuesChart);
-    this.router.get(`${this.path}/popular-users`, adminMiddleware, this.statisticsController.getPopularUsers);
+    this.router.get(`${this.path}`, staffMiddleware, this.statisticsController.getStatistics);
+    this.router.get(`${this.path}/popular-products`, staffMiddleware, this.statisticsController.getPopularProducts);
+    this.router.get(`${this.path}/charts/revenues`, staffMiddleware, this.statisticsController.getRevenuesChart);
+    this.router.get(`${this.path}/popular-users`, staffMiddleware, this.statisticsController.getPopularUsers);
   }
 }
 
