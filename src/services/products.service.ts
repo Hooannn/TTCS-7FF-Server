@@ -1,4 +1,4 @@
-import { isSameTimeframe, getNow, getTime, getStartOfTimeframe, getPreviousTimeframe } from '@/utils/time';
+import { isSameTimeframe, getNow, getTime, getStartOfTimeframe, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { AppDataSource } from '@/data-source';
 import { DataSource, FindManyOptions, Like } from 'typeorm';
 import { OrderItem, Product, ProductImage } from '@/entity';
@@ -145,21 +145,37 @@ class ProductsService {
   };
 
   public async searchProducts({ q }: { q: string }) {
-    const findOptions: FindManyOptions<Product> = {
-      relations: ['images'],
-      where: [
-        { nameEn: Like(`%${q}%`), isActive: 1 },
-        { nameVi: Like(`%${q}%`), isActive: 1 },
-      ],
-    };
-    const products = await this.productRepository.find(findOptions);
+    const startDate = getStartOfTimeframe(getNow().valueOf(), 'monthly').valueOf();
+    const endDate = getEndOfTimeframe(startDate.valueOf(), 'monthly').valueOf();
+
+    const products = await this.productRepository.manager.query(`
+      select 
+        p.productId as productId, 
+        p.nameVi as nameVi, 
+        p.nameEn as nameEn, 
+        p.descriptionVi as descriptionVi, 
+        p.descriptionEn as descriptionEn, 
+        p.currentPrice as currentPrice, 
+        p.createdAt as createdAt,  
+        filteredOrders.totalSold AS totalSoldUnits,
+        (SELECT pi2.imageUrl FROM PRODUCT_IMAGE pi2 WHERE pi2.productId = p.productId LIMIT 1) AS featuredImage
+      FROM PRODUCT p left join (
+	      select oi.productId, SUM(oi.quantity) as totalSold from ORDER_ITEM oi inner join \`ORDER\` o 
+        on o.orderId = oi.orderId 
+        and o.status = 'DONE' 
+        and o.createdAt >= '${dayjs(startDate).format('YYYY-MM-DD HH:mm:ss')}'
+        and o.createdAt <= '${dayjs(endDate).format('YYYY-MM-DD HH:mm:ss')}'
+	      group by oi.productId
+      ) as filteredOrders on p.productId = filteredOrders.productId
+      where p.isActive = 1 and p.isAvailable = 1 and (p.nameEn like '%${q}%' or p.nameVi like '%${q}%')
+    `);
+
     return {
       products: products.map(product => ({
         ...product,
         price: product.currentPrice,
         _id: product.productId,
-        isAvailable: product.isAvailable?.readUInt8(0) === 1,
-        featuredImages: product.images.map(i => i.imageUrl),
+        featuredImages: [product.featuredImage],
         name: { vi: product.nameVi, en: product.nameEn },
         description: { vi: product.descriptionVi, en: product.descriptionEn },
       })),
