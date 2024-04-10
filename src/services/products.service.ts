@@ -18,19 +18,46 @@ class ProductsService {
   }
 
   public async getProductById(id: string) {
-    const product = await this.productRepository.findOne({
-      where: { productId: id, isActive: 1 },
-      relations: ['images', 'category'],
-    });
-    if (!product) throw new HttpException(400, errorStatus.PRODUCT_NOT_FOUND);
+    const startDate = getStartOfTimeframe(getNow().valueOf(), 'yearly').valueOf();
+
+    const results = await this.productRepository.manager.query(`
+          select 
+            p.isActive,
+            p.isAvailable,
+            p.productId as productId,
+            p.nameVi as nameVi,
+            p.nameEn as nameEn,
+            p.descriptionVi as descriptionVi,
+            p.descriptionEn as descriptionEn,
+            p.currentPrice as currentPrice,
+            p.createdAt as createdAt,
+            c.nameVi as categoryNameVi,
+            c.nameEn as categoryNameEn,
+            subt.totalSold as totalSoldUnits,
+            GROUP_CONCAT(pi.imageUrl) as featuredImages 
+          FROM PRODUCT p 
+          LEFT JOIN CATEGORY c on p.categoryId = c.categoryId
+          LEFT JOIN PRODUCT_IMAGE pi ON p.productId  = pi.productId
+          LEFT JOIN (
+            select oi.productId, sum(oi.quantity) as totalSold from ORDER_ITEM oi
+            join (
+              select o.orderId from \`ORDER\` o where o.createdAt >= '${dayjs(startDate).format('YYYY-MM-DD HH:mm:ss')}' and o.status = 'Done' 
+            ) filteredOrder on oi.orderId = filteredOrder.orderId
+            group by oi.productId
+          ) subt on subt.productId = p.productId
+          group by p.productId
+          having p.productId = '${id}' and p.isActive = 1 and p.isAvailable = 1
+    `);
+    if (results.length === 0) throw new HttpException(400, errorStatus.PRODUCT_NOT_FOUND);
+    const product = results[0];
     return {
       ...product,
       price: product.currentPrice,
       _id: product.productId,
-      isAvailable: product.isAvailable?.readUInt8(0) === 1,
-      featuredImages: product.images.map(i => i.imageUrl),
+      featuredImages: product.featuredImages?.split(',') ?? [],
       name: { vi: product.nameVi, en: product.nameEn },
       description: { vi: product.descriptionVi, en: product.descriptionEn },
+      category: { name: { vi: product.categoryNameVi, en: product.categoryNameEn }, nameEn: product.categoryNameEn, nameVi: product.categoryNameVi },
     };
   }
 
