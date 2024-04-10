@@ -47,6 +47,8 @@ class OrdersService {
     'customer.firstName',
     'customer.lastName',
     'product.nameVi',
+    'product.currentPrice',
+    'product.isAvailable',
     'product.nameEn',
     'productImages.imageUrl',
     'voucher.code',
@@ -165,6 +167,7 @@ class OrdersService {
         status,
         rejectionReason: status === 'Rejected' ? rejectionReason : null,
         staffId,
+        updatedAt: getNow().toDate(),
       },
     );
 
