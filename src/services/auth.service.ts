@@ -137,8 +137,8 @@ class AuthService {
         email,
         password: hashedPassword,
         role: UserRole.User,
-        firstName: given_name,
-        lastName: family_name,
+        firstName: given_name ?? 'Unknown',
+        lastName: family_name ?? 'Unknown',
         avatar: picture ?? 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSqtrHsVnbfPaERaPm8v_vcvIXYxCGR0Lnbcw&usqp=CAU',
       });
       await this.userRepository.save(user);

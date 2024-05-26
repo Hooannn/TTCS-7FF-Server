@@ -70,14 +70,6 @@ class ProductsService {
     return await this.productRepository.findOne({ relations: ['category'], where: { categoryId: id, isActive: 1 } });
   }
 
-  public async updateProductSales(items: { product: string | Types.ObjectId; quantity: number }[], orderCreatedAt?: number | string | Date) {
-    return null;
-  }
-
-  public async revertProductSales(items: { product: string | Types.ObjectId; quantity: number }[], orderCreatedAt?: number | string | Date) {
-    return null;
-  }
-
   public async getAllProducts({ skip, limit, filter, sort }: { skip?: number; limit?: number; filter?: string; sort?: string }) {
     const parseFilter = JSON.parse(filter ? filter : '{}');
     const parseSort = JSON.parse(sort ? sort : '{ "createdAt": "DESC" }');
