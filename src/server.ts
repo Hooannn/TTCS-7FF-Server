@@ -22,8 +22,6 @@ const app = new App([
   new VouchersRoute(),
   new StatisticsRoute(),
   new OrdersRoute(),
-  /* Turn some route on after successfully migrated its service
-   */
 ]);
 
 app.start();

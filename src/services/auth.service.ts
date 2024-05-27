@@ -19,10 +19,8 @@ import NodemailerService from './nodemailer.service';
 import axios from 'axios';
 import { User, UserRole } from '@/entity';
 import { AppDataSource } from '@/data-source';
-import RedisService from './redis.service';
 class AuthService {
   private jwt = jwt;
-  private redisClient = RedisService.getInstance().getClient();
   private userRepository = AppDataSource.getRepository(User);
   private nodemailerService = new NodemailerService();
   public async signUpByEmail({ email, password, firstName, lastName }: { email: string; password: string; firstName: string; lastName: string }) {
@@ -67,11 +65,10 @@ class AuthService {
 
   public async refreshToken(refreshToken: string) {
     if (!refreshToken) throw new HttpException(401, errorStatus.NO_CREDENTIALS);
-    const { userId: refreshUserId } = this.verifyRefreshToken(refreshToken);
-    const storedToken = await this.redisClient.get(`refresh_token:${refreshUserId}`);
-    if (storedToken !== refreshToken) throw new HttpException(401, errorStatus.INVALID_TOKEN);
-    const user = await this.userRepository.findOneBy({ userId: refreshUserId, isActive: 1 });
+    const { userId } = this.verifyRefreshToken(refreshToken);
+    const user = await this.userRepository.findOneBy({ userId, isActive: 1 });
     if (!user) throw new HttpException(400, errorStatus.INVALID_TOKEN_PAYLOAD);
+    if (user.refreshToken !== refreshToken) throw new HttpException(401, errorStatus.INVALID_TOKEN);
     const accessToken = this.generateAccessToken({ userId: user.userId.toString(), role: user.role });
     const newRefreshToken = this.generateRefreshToken({ userId: user.userId.toString() });
     return { accessToken, refreshToken: newRefreshToken };
@@ -82,19 +79,19 @@ class AuthService {
     if (!user) throw new HttpException(400, errorStatus.UNREGISTERED);
     const token = this.generateResetPasswordToken({ email });
     const resetPasswordUrl = `${CLIENT_URL}/auth?type=reset&token=${token}`;
-    await this.nodemailerService.sendResetPasswordMail(email, user?.firstName, resetPasswordUrl, locale);
+    this.nodemailerService.sendResetPasswordMail(email, user?.firstName, resetPasswordUrl, locale);
     return { token };
   }
 
   public async resetPassword(newPassword: string, token: string) {
     const decodedToken = this.verifyResetPasswordToken(token) as JwtPayload;
     const email = decodedToken.email;
-    const storedToken = await this.redisClient.get(`reset_password_token:${email}`);
-    if (!storedToken) throw new HttpException(400, errorStatus.RESET_PASSWORD_EXPIRED);
-    if (storedToken !== token) throw new HttpException(400, errorStatus.INVALID_RESET_PASSWORD_TOKEN);
+    const user = await this.userRepository.findOneBy({ email, isActive: 1 });
+    if (!user) throw new HttpException(400, errorStatus.UNREGISTERED);
+    if (!user.resetPasswordToken) throw new HttpException(400, errorStatus.RESET_PASSWORD_EXPIRED);
+    if (user.resetPasswordToken !== token) throw new HttpException(400, errorStatus.INVALID_RESET_PASSWORD_TOKEN);
     const newHashedPassword = hashSync(newPassword, parseInt(SALTED_PASSWORD));
-    await this.userRepository.update({ email }, { password: newHashedPassword });
-    await this.redisClient.del(`reset_password_token:${email}`);
+    await this.userRepository.update({ email }, { password: newHashedPassword, resetPasswordToken: null });
     return { email: decodedToken.email, password: newPassword };
   }
 
@@ -179,7 +176,7 @@ class AuthService {
     const token = this.jwt.sign({ userId }, REFRESH_TOKEN_SECRET, {
       expiresIn: parseInt(REFRESH_TOKEN_LIFE) ?? 2592000,
     });
-    this.redisClient.setEx(`refresh_token:${userId}`, parseInt(REFRESH_TOKEN_LIFE) ?? 2592000, token);
+    this.userRepository.update({ userId }, { refreshToken: token });
     return token;
   }
 
@@ -191,7 +188,7 @@ class AuthService {
     const token = this.jwt.sign({ email }, RESETPASSWORD_TOKEN_SECRET, {
       expiresIn: parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600,
     });
-    this.redisClient.setEx(`reset_password_token:${email}`, parseInt(RESETPASSWORD_TOKEN_LIFE) ?? 600, token);
+    this.userRepository.update({ email }, { resetPasswordToken: token });
     return token;
   }
 

@@ -34,6 +34,12 @@ export class User {
 
   @Column({ type: 'bit', default: () => `b'1'` })
   isActive: number;
+
+  @Column({ nullable: true })
+  refreshToken: string;
+
+  @Column({ nullable: true })
+  resetPasswordToken: string;
 }
 
 export enum UserRole {

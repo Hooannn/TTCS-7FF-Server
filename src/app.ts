@@ -12,7 +12,6 @@ import errorMiddleware from '@middlewares/error.middleware';
 import { logger, stream } from '@utils/logger';
 import 'reflect-metadata';
 import { AppDataSource } from './data-source';
-import RedisService from './services/redis.service';
 class App {
   public app: express.Application;
   public env: string;
@@ -33,11 +32,6 @@ class App {
       await this.connectToDatabase();
     } catch (error) {
       logger.error(`❌ Error while connect to database \n${JSON.stringify(error)}`);
-    }
-    try {
-      await this.connectToRedis();
-    } catch (error) {
-      logger.error(`❌ Error while connect to redis \n${JSON.stringify(error)}`);
     }
     try {
       this.listen();
@@ -64,11 +58,6 @@ class App {
 
   private async connectToDatabase() {
     return AppDataSource.initialize();
-  }
-
-  private async connectToRedis() {
-    const redis = RedisService.getInstance().getClient();
-    await redis.connect();
   }
 
   private initializeMiddlewares() {
