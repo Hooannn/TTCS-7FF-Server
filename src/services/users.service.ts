@@ -208,6 +208,10 @@ class UsersService {
     return await this.cartItemRepository.update({ userId, status: CartItemStatus.Active }, { status: CartItemStatus.Removed });
   }
 
+  public async checkoutCartItems(userId: string) {
+    return await this.cartItemRepository.update({ userId, status: CartItemStatus.Active }, { status: CartItemStatus.Purchased });
+  }
+
   public async getNewestUsers(type: 'daily' | 'weekly' | 'monthly' | 'yearly', limit = 5) {
     const startDate = getStartOfTimeframe(getNow().valueOf(), type).toDate();
     return await this.userRepository.find({

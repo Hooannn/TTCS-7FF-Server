@@ -100,7 +100,7 @@ class OrdersController {
       });
 
       const { email: customerEmail, userId: customerId, firstName } = await this.usersService.findUserById(userId);
-      await this.usersService.resetCartItems(customerId);
+      await this.usersService.checkoutCartItems(customerId);
       const mailHref = `${CLIENT_URL}/profile/orders`;
       if (customerEmail) {
         this.nodemailerService.sendOrderConfirmationEmail(customerEmail, firstName, customerId, mailHref, locale.toString());
