@@ -137,6 +137,7 @@ class OrdersService {
       name: order.name,
       voucherId: order?.voucherId,
       status: OrderStatus.Pending,
+      updatedAt: getNow().toDate(),
     });
 
     await this.orderRepository.save(newOrder);
