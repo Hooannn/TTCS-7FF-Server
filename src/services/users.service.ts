@@ -118,6 +118,11 @@ class UsersService {
     return await this.userRepository.update({ userId, role: UserRole.User }, updatedUser);
   }
 
+  public async updateProfile(userId: string, user: User) {
+    const { lastName, firstName, phoneNumber, address, avatar } = user as any;
+    return await this.userRepository.update({ userId }, { lastName, firstName, phoneNumber, address, avatar });
+  }
+
   public async updateStaff(userId: string, user: User) {
     let hashedPassword = null;
     const { resetPassword, lastName, firstName, phoneNumber, address, avatar, role } = user as any;

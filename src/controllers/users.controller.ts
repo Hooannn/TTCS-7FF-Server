@@ -104,7 +104,7 @@ class UsersController {
     try {
       const { userId } = req.auth;
       const user = req.body;
-      const updatedUser = await this.usersService.updateUser(userId.toString(), user);
+      const updatedUser = await this.usersService.updateProfile(userId.toString(), user);
       res.status(200).json({ code: 200, success: true, data: updatedUser, message: successStatus.UPDATE_SUCCESSFULLY });
     } catch (error) {
       next(error);

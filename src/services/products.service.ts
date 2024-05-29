@@ -136,13 +136,14 @@ class ProductsService {
           category.nameVi as categoryNameVi, 
           category.nameEn as categoryNameEn, 
           SUM(filteredOrders.quantity) AS totalSoldUnits,
+          SUM(filteredOrders.quantity * filteredOrders.price) AS totalSales,
           (SELECT pi2.imageUrl FROM PRODUCT_IMAGE pi2 WHERE pi2.productId = p.productId LIMIT 1) AS featuredImage
         FROM 
           PRODUCT p
         LEFT JOIN 
           CATEGORY category ON category.categoryId = p.categoryId
         LEFT JOIN 
-          (select oi.orderId, oi.productId, oi.quantity from ORDER_ITEM oi join \`ORDER\` o on oi.orderId = o.orderId and o.status = 'Done' and o.createdAt >= '${dayjs(
+          (select oi.orderId, oi.productId, oi.quantity, oi.price from ORDER_ITEM oi join \`ORDER\` o on oi.orderId = o.orderId and o.status = 'Done' and o.createdAt >= '${dayjs(
             startDate,
           ).format('YYYY-MM-DD HH:mm:ss')}') 
     	      AS filteredOrders 
