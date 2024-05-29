@@ -1,7 +1,7 @@
 import { isSameTimeframe, getNow, getTime, getStartOfTimeframe, getPreviousTimeframe, getEndOfTimeframe } from '@/utils/time';
 import { AppDataSource } from '@/data-source';
 import { DataSource, FindManyOptions, Like } from 'typeorm';
-import { OrderItem, Product, ProductImage } from '@/entity';
+import { CartItem, CartItemStatus, OrderItem, Product, ProductImage } from '@/entity';
 import { HttpException } from '@/exceptions/HttpException';
 import { errorStatus } from '@/config';
 import { parseCreatedAtFilter } from '@/utils/parseCreatedAtFilter';
@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 class ProductsService {
   private productRepository = AppDataSource.getRepository(Product);
   private orderItemRepository = AppDataSource.getRepository(OrderItem);
+  private cartItemRepository = AppDataSource.getRepository(CartItem);
   private productImagesRepository = AppDataSource.getRepository(ProductImage);
 
   public async resetProductsDailyData() {
@@ -223,6 +224,7 @@ class ProductsService {
   public async deleteProduct(productId: string) {
     const isUsed = await this.orderItemRepository.existsBy({ productId });
     if (isUsed) throw new HttpException(400, errorStatus.PRODUCT_IS_USED);
+    await this.cartItemRepository.update({ productId }, { status: CartItemStatus.Removed });
     return this.productRepository.update(productId, { isActive: 0 });
   }
 

@@ -77,6 +77,26 @@ class UsersService {
     const isEmailExisted = await this.userRepository.existsBy({ email, isActive: 1 });
     if (isEmailExisted) throw new HttpException(409, errorStatus.EMAIL_EXISTED);
     const hashedPassword = hashSync(password, parseInt(SALTED_PASSWORD));
+    const deletedUser = await this.userRepository.findOneBy({ email, isActive: 0 });
+    if (deletedUser) {
+      await this.userRepository.update(
+        { userId: deletedUser.userId },
+        {
+          firstName,
+          lastName,
+          avatar,
+          isActive: 1,
+          password: hashedPassword,
+          phoneNumber,
+          role,
+          email,
+          address,
+        },
+      );
+      delete deletedUser.password;
+      delete deletedUser.isActive;
+      return deletedUser;
+    }
     const user = this.userRepository.create({
       firstName,
       lastName,
