@@ -6,8 +6,8 @@
 - [x] FilesService
 - [x] NodeMailerService
 - [x] UsersService (includes CartItem)
-- [ ] OrdersService
-- [ ] CategoriesService
-- [ ] ProductsService
-- [ ] StatisticsService
-- [ ] VouchersService
+- [x] OrdersService
+- [x] CategoriesService
+- [x] ProductsService
+- [x] StatisticsService
+- [x] VouchersService
